@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "RateMyGaucho",
+  "version": "1.0.4",
+  "description": "UCSB GOLD integration of professor ratings from packaged CSV.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://my.sa.ucsb.edu/*"],
+      "exclude_matches": ["https://my.sa.ucsb.edu/gold/Logout.aspx*"],
+      "js": ["content/content.js"],
+      "css": ["content/styles.css"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["data/ucsb_professors_rmp.csv"],
+      "matches": ["https://my.sa.ucsb.edu/*"]
+    }
+  ],
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://my.sa.ucsb.edu/*"
+  ]
+}

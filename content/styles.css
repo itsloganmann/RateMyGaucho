@@ -1,0 +1,113 @@
+/* Enhanced UCSB-themed card */
+.rmg-card {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	grid-template-areas:
+		"badge title"
+		"stars sub"
+		"meta meta"
+		"actions actions";
+	gap: 6px 8px;
+	align-items: center;
+	padding: 8px 10px;
+	border-radius: 10px;
+	background: #fff;
+	border: 1px solid rgba(0,0,0,0.06);
+	box-shadow: 0 2px 6px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+	margin-top: 6px;
+	position: relative;
+	overflow: visible;
+	box-sizing: border-box;
+	min-width: 160px;
+}
+
+.rmg-card::before {
+	content: "";
+	position: absolute;
+	left: 0; top: 0; bottom: 0;
+	width: 4px;
+	background: #003660;
+}
+
+.rmg-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04); }
+
+@keyframes rmg-pop {
+	0% { transform: translateY(2px); opacity: 0; }
+	100% { transform: translateY(0); opacity: 1; }
+}
+
+.rmg-badge {
+	font-weight: 800;
+	padding: 4px 8px;
+	border-radius: 8px;
+	min-width: 40px;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0.2px;
+}
+.rmg-badge { grid-area: badge; }
+.rmg-title { grid-area: title; }
+.rmg-subtle { grid-area: sub; display: block; }
+.rmg-stars { grid-area: stars; }
+.rmg-meter { display: none; }
+.rmg-link { }
+.rmg-meta { grid-area: meta; }
+.rmg-actions { grid-area: actions; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+.rmg-badge--good { background: #d8efe1; color: #1b5e20; }
+.rmg-badge--ok { background: #fff4d6; color: #7a5800; }
+.rmg-badge--bad { background: #f8d7da; color: #8a1c1c; }
+
+.rmg-title { color: #003660; font-weight: 700; font-size: 13px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; }
+.rmg-subtle { opacity: 0.85; font-size: 12px; white-space: nowrap; }
+.rmg-meta { opacity: 0.85; font-size: 12px; }
+
+.rmg-link {
+	justify-self: end;
+	font-weight: 600;
+	color: #ffffff;
+	background: linear-gradient(180deg, #5aa0d7 0%, #2e76b7 100%);
+	border: 1px solid #2a5f8f;
+	padding: 3px 8px;
+	border-radius: 4px;
+	text-decoration: none;
+	font-size: 12px;
+	box-shadow: 0 1px 0 rgba(255,255,255,0.35) inset, 0 1px 0 rgba(0,0,0,0.05);
+}
+.rmg-link:hover { filter: brightness(0.98); }
+
+.rmg-actions { display: inline-flex; gap: 6px; justify-self: end; flex: 0 0 auto; }
+.rmg-link--secondary { background: #ffffff; color: #003660; border: 1px solid #bcd0e8; box-shadow: none; }
+.rmg-link--secondary:hover { background: #f3f8ff; }
+
+/* Stars */
+.rmg-stars {
+	display: inline-flex;
+	gap: 2px;
+	font-size: 13px;
+	color: #FDB515;
+	margin-left: 2px;
+}
+
+/* Rating meter */
+.rmg-meter {
+	grid-column: 1 / -1;
+	height: 6px;
+	background: #edf2f7;
+	border-radius: 6px;
+	overflow: hidden;
+	margin-top: 2px;
+}
+.rmg-meter > span {
+	display: block;
+	height: 100%;
+	background: linear-gradient(90deg, #FDB515, #f7a900);
+	width: 0;
+	transition: width 240ms ease;
+}
+
+/* Theme accents by quality */
+.rmg-good::before { background: #c8e6c9; }
+.rmg-ok::before { background: #fff8e1; }
+.rmg-bad::before { background: #ffcdd2; }
+
