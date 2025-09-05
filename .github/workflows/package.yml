@@ -1,0 +1,28 @@
+name: Build Zip
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create dist directory
+        run: mkdir -p dist
+      - name: Package extension
+        run: |
+          zip -r dist/RateMyGaucho.zip . \
+            -x "*.git*" \
+               "dist/*" \
+               ".github/*" \
+               "**/*.ps1" \
+               "**/*.sh"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RateMyGaucho-zip
+          path: dist/RateMyGaucho.zip
+

@@ -1,0 +1,8 @@
+* text=auto
+*.png binary
+*.jpg binary
+*.ico binary
+
+# Keep CSVs as text with LF
+*.csv text eol=lf
+
