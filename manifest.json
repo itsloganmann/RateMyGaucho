@@ -20,7 +20,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["data/ucsb_professors_rmp.csv"],
+      "resources": ["scores.csv", "gaucho.png"],
       "matches": ["https://my.sa.ucsb.edu/*"]
     }
   ],

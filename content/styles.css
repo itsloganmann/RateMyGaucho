@@ -1,24 +1,22 @@
 /* Enhanced UCSB-themed card */
 .rmg-card {
 	display: grid;
-	grid-template-columns: auto 1fr;
+	grid-template-columns: auto auto 1fr auto;
 	grid-template-areas:
-		"badge title"
-		"stars sub"
-		"meta meta"
-		"actions actions";
+		"badge stars sub actions";
 	gap: 6px 8px;
 	align-items: center;
-	padding: 8px 10px;
-	border-radius: 10px;
+	padding: 4px 12px;
+	border-radius: 8px;
 	background: #fff;
 	border: 1px solid rgba(0,0,0,0.06);
 	box-shadow: 0 2px 6px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-	margin-top: 6px;
+	margin-top: 4px;
 	position: relative;
 	overflow: visible;
 	box-sizing: border-box;
-	min-width: 160px;
+	min-width: 420px;
+	max-width: 580px;
 }
 
 .rmg-card::before {
@@ -46,24 +44,20 @@
 	letter-spacing: 0.2px;
 }
 .rmg-badge { grid-area: badge; }
-.rmg-title { grid-area: title; }
 .rmg-subtle { grid-area: sub; display: block; }
 .rmg-stars { grid-area: stars; }
 .rmg-meter { display: none; }
 .rmg-link { }
-.rmg-meta { grid-area: meta; }
-.rmg-actions { grid-area: actions; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.rmg-actions { grid-area: actions; display: flex; justify-content: flex-end; }
 
 .rmg-badge--good { background: #d8efe1; color: #1b5e20; }
 .rmg-badge--ok { background: #fff4d6; color: #7a5800; }
 .rmg-badge--bad { background: #f8d7da; color: #8a1c1c; }
 
-.rmg-title { color: #003660; font-weight: 700; font-size: 13px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; }
 .rmg-subtle { opacity: 0.85; font-size: 12px; white-space: nowrap; }
 .rmg-meta { opacity: 0.85; font-size: 12px; }
 
 .rmg-link {
-	justify-self: end;
 	font-weight: 600;
 	color: #ffffff;
 	background: linear-gradient(180deg, #5aa0d7 0%, #2e76b7 100%);
@@ -71,23 +65,49 @@
 	padding: 3px 8px;
 	border-radius: 4px;
 	text-decoration: none;
-	font-size: 12px;
+	font-size: 11px;
 	box-shadow: 0 1px 0 rgba(255,255,255,0.35) inset, 0 1px 0 rgba(0,0,0,0.05);
+	text-align: center;
+	white-space: nowrap;
 }
 .rmg-link:hover { filter: brightness(0.98); }
 
-.rmg-actions { display: inline-flex; gap: 6px; justify-self: end; flex: 0 0 auto; }
-.rmg-link--secondary { background: #ffffff; color: #003660; border: 1px solid #bcd0e8; box-shadow: none; }
-.rmg-link--secondary:hover { background: #f3f8ff; }
-
-/* Stars */
+/* Gaucho Stars */
 .rmg-stars {
 	display: inline-flex;
-	gap: 2px;
-	font-size: 13px;
-	color: #FDB515;
-	margin-left: 2px;
+	gap: 6px;
+	align-items: center;
 }
+
+.rmg-star-container {
+	position: relative;
+	width: 32px;
+	height: 32px;
+	display: inline-block;
+}
+
+.rmg-star {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 32px;
+	height: 32px;
+	object-fit: contain;
+	transition: filter 0.2s ease;
+}
+
+.rmg-star--empty {
+	filter: grayscale(100%) brightness(0.1) contrast(0.5); /* Very dark, almost black gaucho */
+	z-index: 1;
+}
+
+.rmg-star--filled {
+	filter: saturate(1.8) contrast(1.5) brightness(1.3) hue-rotate(10deg); /* Very vibrant, bright colored gaucho */
+	z-index: 2;
+	/* Use clip-path to show only the percentage specified by --fill-percentage */
+	clip-path: inset(0 calc(100% - var(--fill-percentage, 0%)) 0 0);
+}
+
 
 /* Rating meter */
 .rmg-meter {

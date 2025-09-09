@@ -26,7 +26,7 @@ async function ensureRatingsLoaded() {
 	if (__rmg_loading) return __rmg_loading;
 	__rmg_loading = (async () => {
 		try {
-			const csvUrl = chrome.runtime.getURL('data/ucsb_professors_rmp.csv');
+			const csvUrl = chrome.runtime.getURL('scores.csv');
 			const res = await fetch(csvUrl);
 			if (!res.ok) return null;
 			const csvText = await res.text();
@@ -56,16 +56,15 @@ function parseCsv(csvText) {
 	const out = [];
 	for (const line of lines) {
 		const cols = line.split(',');
-		if (cols.length < 5) continue;
-		const [department, first_name, last_name, rmp_score, num_reviews, difficulty, would_take_again] = cols;
+		if (cols.length < 6) continue;
+		const [department, first_name, last_name, rmp_score, num_reviews, profile_url] = cols;
 		const rec = {
 			department: (department||'').trim(),
 			firstName: (first_name||'').trim(),
 			lastName: (last_name||'').trim(),
 			rmpScore: Number(rmp_score),
 			numReviews: Number(num_reviews),
-			difficulty: difficulty !== undefined ? Number(difficulty) : undefined,
-			wouldTakeAgain: would_take_again !== undefined ? Number(would_take_again) : undefined
+			profileUrl: (profile_url||'').trim()
 		};
 		if (!Number.isFinite(rec.rmpScore) || !Number.isFinite(rec.numReviews)) continue;
 		out.push(rec);
@@ -76,10 +75,21 @@ function parseCsv(csvText) {
 function buildLookup(records) {
 	const map = new Map();
 	for (const rec of records) {
+		// Create keys with department
 		const deptKey = makeKey(rec.lastName, rec.firstName, rec.department);
-		const anyKey = makeKey(rec.lastName, rec.firstName, '');
 		(map.get(deptKey) || map.set(deptKey, []).get(deptKey)).push(rec);
+		
+		// Create keys without department
+		const anyKey = makeKey(rec.lastName, rec.firstName, '');
 		(map.get(anyKey) || map.set(anyKey, []).get(anyKey)).push(rec);
+		
+		// Create keys with just last name (for flexible matching)
+		const lastNameKey = makeKey(rec.lastName, '', '');
+		(map.get(lastNameKey) || map.set(lastNameKey, []).get(lastNameKey)).push(rec);
+		
+		// Create keys with last name and first initial
+		const initialKey = makeKey(rec.lastName, rec.firstName.charAt(0), '');
+		(map.get(initialKey) || map.set(initialKey, []).get(initialKey)).push(rec);
 	}
 	return map;
 }
@@ -90,7 +100,7 @@ function normalizeName(s = '') {
 
 function makeKey(last, first, dept) {
 	const ln = normalizeName(last);
-	const fi = normalizeName(first).slice(0, 1);
+	const fi = first ? normalizeName(first).slice(0, 1) : '';
 	const dp = (dept || '').toLowerCase();
 	return `${ln}|${fi}|${dp}`;
 }
@@ -111,15 +121,37 @@ function observeAndRender() {
 		if (!nodes.length) return;
 		const lookup = await ensureRatingsLoaded();
 		if (!lookup) return;
-		const sample = nodes.slice(0, 3).map(n => (n.textContent||'').trim().replace(/\s+/g,' '));
+		const sample = nodes.slice(0, 5).map(n => (n.textContent||'').trim().replace(/\s+/g,' '));
 		console.log('[RateMyGaucho] sample candidate texts:', sample);
+		
+		let matchedCount = 0;
+		let totalProcessed = 0;
+		
 		for (const node of nodes) {
 			if (node.dataset.rmgInitialized === '1') continue;
 			node.dataset.rmgInitialized = '1';
+			totalProcessed++;
+			
 			const info = extractInstructorInfo(node);
+			console.log('[RateMyGaucho] Processing:', info.raw, '-> names:', info.names);
+			
+			// Debug: show what keys are being generated
+			for (const name of info.names) {
+				const keys = candidateKeysForName(name, '');
+				console.log('[RateMyGaucho] Keys for', name, ':', keys.slice(0, 5)); // Show first 5 keys
+			}
+			
 			const match = matchInstructor(info, lookup);
-			if (match) renderCard(node, match);
+			if (match) {
+				matchedCount++;
+				console.log('[RateMyGaucho] MATCHED:', info.raw, '->', match.firstName, match.lastName, match.rmpScore);
+				renderCard(node, match);
+			} else {
+				console.log('[RateMyGaucho] NO MATCH for:', info.raw);
+			}
 		}
+		
+		console.log(`[RateMyGaucho] Summary: ${matchedCount}/${totalProcessed} instructors matched`);
 	}
 }
 
@@ -186,11 +218,34 @@ function findInstructorNodes() {
 			const txt = (cell.textContent || '').trim().replace(/\s+/g, ' ');
 			if (!txt) continue;
 			const score = nameScore(txt);
-			if (score >= 4) {
+			if (score >= 3) { // Lowered threshold from 4 to 3
 				const row = cell.closest && cell.closest('tr, .row, .resultsRow, .SSR_CLSRSLT_WRK, .sectionRow, .CourseRow');
 				if (!row) continue;
 				const hasAdd = !!Array.from(row.querySelectorAll('a,button,input')).find(el => /add/i.test((el.textContent || el.value || '').trim()));
 				if (hasAdd) set.add(cell);
+			}
+		}
+	} catch {}
+
+	// 5) Additional detection: Look for cells that contain common instructor name patterns
+	try {
+		for (const cell of document.querySelectorAll('td, span, div')) {
+			const txt = (cell.textContent || '').trim().replace(/\s+/g, ' ');
+			if (!txt) continue;
+			
+			// Look for patterns like "LAST F", "LAST F M", "FIRST LAST", etc.
+			if (/^[A-Z][A-Z'\-]+\s+[A-Z](?:\s+[A-Z])?$/.test(txt) || // LAST F or LAST F M
+				/^[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(txt) || // First Last
+				/^[A-Z][A-Z'\-]+,\s*[A-Z]/.test(txt)) { // LAST, F
+				
+				const row = cell.closest && cell.closest('tr, .row, .resultsRow, .SSR_CLSRSLT_WRK, .sectionRow, .CourseRow');
+				if (row) {
+					// Check if this row has course-related elements
+					const hasCourseElements = !!Array.from(row.querySelectorAll('a,button,input')).find(el => 
+						/(add|course|info|final|save|cart)/i.test((el.textContent || el.value || '').trim())
+					);
+					if (hasCourseElements) set.add(cell);
+				}
 			}
 		}
 	} catch {}
@@ -202,26 +257,43 @@ function nameScore(txt) {
 	const clean = txt.trim().replace(/\s+/g, ' ');
 	if (!clean) return 0;
 	// Immediately reject obvious non-name cells
-	if (/(Space|Max|Units|Building|Hall|Room|Course|Info|Final|Save|Cart|Closed|Open)/i.test(clean)) return 0;
+	if (/(Space|Max|Units|Building|Hall|Room|Course|Info|Final|Save|Cart|Closed|Open|Time|Days|Section)/i.test(clean)) return 0;
 	if (/\d{2,}/.test(clean)) return 0;
 	const words = clean.split(' ').filter(Boolean);
 	let score = 0;
+	
 	// "Last, First" pattern
 	if (/,\s*[A-Za-z]/.test(clean)) score += 3;
+	
 	// "First Last" (require at least two words)
 	if (words.length >= 2 && /^[A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+){1,3}$/.test(clean)) score += 3;
+	
 	// "LAST I N" pattern (all caps last + initials)
 	if (/^[A-Z][A-Z'\-]+(?:\s+[A-Z](?:\.|\b)){1,3}$/.test(clean)) score += 3;
+	
+	// "LAST F" pattern (all caps last + single initial)
+	if (/^[A-Z][A-Z'\-]+\s+[A-Z]$/.test(clean)) score += 2;
+	
+	// Mixed case patterns like "Last F" or "First Last"
+	if (/^[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(clean)) score += 2;
+	if (/^[A-Z][A-Z'\-]+\s+[A-Z][a-z]+$/.test(clean)) score += 2;
+	
 	// Bonus for presence of initials tokens
 	if (words.some(w => w.length === 1 || /\.$/.test(w))) score += 1;
+	
 	// Reasonable length
 	if (clean.length <= 40) score += 1;
+	
+	// Bonus for common name patterns
+	if (/^[A-Z][a-z]+\s+[A-Z]\.?\s*[A-Z][a-z]+$/.test(clean)) score += 1; // First M. Last
+	
 	return score;
 }
 
 function extractInstructorInfo(node) {
 	const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
-	const names = text.split(/;|\u00a0|\/|,\s*(?=[A-Z])|\sand\s/i).map(s => s.trim()).filter(Boolean);
+	// Split on various separators that might separate multiple instructor names
+	const names = text.split(/;|\u00a0|\/|,\s*(?=[A-Z])|\sand\s|&/i).map(s => s.trim()).filter(Boolean);
 	return { raw: text, names };
 }
 
@@ -229,27 +301,66 @@ function candidateKeysForName(name, dept) {
 	const clean = name.replace(/\(.*?\)/g, '').replace(/[^A-Za-z,\s.-]/g, ' ').replace(/\s+/g, ' ').trim();
 	const keys = [];
 	if (!clean) return keys;
+	
 	// Pattern: LAST I N (all caps last name followed by 1-3 initials)
 	const caps = clean.match(/^([A-Z][A-Z'\-]+)(?:\s+([A-Z]))(?:\s+[A-Z](?:\.|\b)){0,2}$/);
 	if (caps) {
 		const last = caps[1];
 		const firstInitial = (caps[2] || '').slice(0,1);
 		keys.push(makeKey(last, firstInitial, dept));
+		keys.push(makeKey(last, firstInitial, ''));
+		
+		// For LAST F format, also try matching with any first name that starts with F
+		// This helps match "CHILDRESS A" with "James,Childress" in CSV
+		keys.push(makeKey(last, '', dept)); // Try with empty first name
+		keys.push(makeKey(last, '', ''));
 	}
+	
+	// Pattern: LAST, FIRST (comma-separated)
 	if (clean.includes(',')) {
 		const [last, rest] = clean.split(',').map(s => s.trim());
 		const first = (rest || '').split(' ')[0] || '';
 		keys.push(makeKey(last, first, dept));
+		keys.push(makeKey(last, first, ''));
 	}
+	
 	const parts = clean.split(' ').filter(Boolean);
 	if (parts.length >= 2) {
 		// Treat as "First ... Last"
 		keys.push(makeKey(parts[parts.length - 1], parts[0], dept));
+		keys.push(makeKey(parts[parts.length - 1], parts[0], ''));
+		
 		// Treat as "Last First [Middle...]"
 		keys.push(makeKey(parts[0], parts[1], dept));
+		keys.push(makeKey(parts[0], parts[1], ''));
+		
+		// Try all possible combinations for 2-3 word names
+		if (parts.length === 2) {
+			// For 2 words, try both orders
+			keys.push(makeKey(parts[1], parts[0], dept));
+			keys.push(makeKey(parts[1], parts[0], ''));
+		} else if (parts.length === 3) {
+			// For 3 words, try multiple combinations
+			keys.push(makeKey(parts[2], parts[0], dept)); // Last First Middle
+			keys.push(makeKey(parts[2], parts[0], ''));
+			keys.push(makeKey(parts[0], parts[1], dept)); // First Middle Last
+			keys.push(makeKey(parts[0], parts[1], ''));
+		}
 	}
-	const withoutDept = Array.from(keys).map(k => k.replace(/\|[^|]*$/, '|'));
-	for (const k of withoutDept) keys.push(k);
+	
+	// Add fuzzy matching for common name variations
+	for (const key of Array.from(keys)) {
+		const [last, first, deptPart] = key.split('|');
+		// Try with just first initial
+		if (first.length > 1) {
+			keys.push(`${last}|${first[0]}|${deptPart}`);
+		}
+		// Try with just last name (for very common names)
+		if (last.length > 3) {
+			keys.push(`${last}||${deptPart}`);
+		}
+	}
+	
 	return Array.from(new Set(keys));
 }
 
@@ -272,12 +383,6 @@ function renderCard(anchorNode, record) {
 	const rating = Number(record.rmpScore || 0);
 	card.className = 'rmg-card ' + (rating >= 4 ? 'rmg-good' : rating >= 3 ? 'rmg-ok' : 'rmg-bad');
 
-	function slugifyForPlat(lastName, firstName) {
-		const ln = (lastName || '').toUpperCase().replace(/[^A-Z]/g, '');
-		const fi = (firstName || '').toUpperCase().replace(/[^A-Z]/g, '');
-		if (!ln) return '';
-		return `${ln} ${fi}`.trim();
-	}
 
 	const badge = document.createElement('span');
 	badge.className = 'rmg-badge';
@@ -286,29 +391,57 @@ function renderCard(anchorNode, record) {
 		rating >= 4 ? 'rmg-badge--good' : rating >= 3 ? 'rmg-badge--ok' : 'rmg-badge--bad'
 	);
 
-	const title = document.createElement('span');
-	title.className = 'rmg-title';
-	title.textContent = `${record.firstName} ${record.lastName}`.trim();
-	title.style.maxWidth = '14ch';
+	// Removed title/name display as requested
 
 	const sub = document.createElement('span');
 	sub.className = 'rmg-subtle';
 	sub.textContent = `${record.numReviews} reviews`;
 
-	const stars = document.createElement('span');
+	const stars = document.createElement('div');
 	stars.className = 'rmg-stars';
-	const full = Math.max(0, Math.min(5, Math.floor(rating)));
-	const half = rating - full >= 0.5 ? 1 : 0;
-	const empty = 5 - full - half;
-	stars.textContent = '★'.repeat(full) + (half ? '☆' : '') + '☆'.repeat(empty);
+	
+	// Create 5 gaucho star images with precise tenths-based partial fills
+	for (let i = 0; i < 5; i++) {
+		const starContainer = document.createElement('div');
+		starContainer.className = 'rmg-star-container';
+		
+		// Create background (empty) star
+		const emptyStar = document.createElement('img');
+		emptyStar.src = chrome.runtime.getURL('gaucho.png');
+		emptyStar.className = 'rmg-star rmg-star--empty';
+		emptyStar.alt = '★';
+		
+		// Create filled star overlay
+		const filledStar = document.createElement('img');
+		filledStar.src = chrome.runtime.getURL('gaucho.png');
+		filledStar.className = 'rmg-star rmg-star--filled';
+		filledStar.alt = '★';
+		
+		// Calculate precise fill percentage for this star based on tenths
+		const starValue = i + 1;
+		let fillPercentage = 0;
+		
+		if (rating >= starValue) {
+			// Fully filled star
+			fillPercentage = 100;
+		} else if (rating > starValue - 1) {
+			// Partially filled star - calculate exact percentage based on tenths
+			const partialRating = rating - (starValue - 1);
+			fillPercentage = Math.max(0, Math.min(100, partialRating * 100));
+		}
+		
+		// Apply the fill percentage as a CSS custom property
+		starContainer.style.setProperty('--fill-percentage', `${fillPercentage}%`);
+		
+		starContainer.appendChild(emptyStar);
+		starContainer.appendChild(filledStar);
+		stars.appendChild(starContainer);
+	}
 
-	// Meta line for difficulty / would-take-again if present
+	// Meta line for additional info if present
 	const meta = document.createElement('span');
 	meta.className = 'rmg-meta';
-	const parts = [];
-	if (Number.isFinite(record.difficulty)) parts.push(`Diff ${record.difficulty.toFixed(1)}`);
-	if (Number.isFinite(record.wouldTakeAgain)) parts.push(`WTA ${record.wouldTakeAgain}%`);
-	meta.textContent = parts.join(' • ');
+	meta.textContent = ''; // No additional meta info in the complete list CSV
 
 	// Inline meter that fills proportionally to rating
 	const meter = document.createElement('div');
@@ -323,25 +456,16 @@ function renderCard(anchorNode, record) {
 	link.className = 'rmg-link';
 	link.target = '_blank';
 	link.rel = 'noopener noreferrer';
-	const platName = slugifyForPlat(record.lastName, record.firstName);
-	link.href = platName ? `https://ucsbplat.com/instructor/${encodeURIComponent(platName)}` : 'https://ucsbplat.com/instructor/';
+	link.href = record.profileUrl || 'https://ucsbplat.com/instructor/';
 	link.textContent = 'UCSB Plat';
 
-	const link2 = document.createElement('a');
-	link2.className = 'rmg-link rmg-link--secondary';
-	link2.target = '_blank';
-	link2.rel = 'noopener noreferrer';
-	link2.href = 'https://ucsbplat.com/curriculum/';
-	link2.textContent = 'Courses';
+	// Removed Courses button as requested
 
 	card.appendChild(badge);
-	card.appendChild(title);
-	card.appendChild(sub);
 	card.appendChild(stars);
-	if (meta.textContent) card.appendChild(meta);
+	card.appendChild(sub);
 	card.appendChild(meter);
 	actions.appendChild(link);
-	actions.appendChild(link2);
 	card.appendChild(actions);
 
 	// Prefer inserting inside the same table cell to avoid invalid DOM under <tr>
