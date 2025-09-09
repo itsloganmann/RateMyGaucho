@@ -135,5 +135,4 @@ MIT © 2025
 ## Acknowledgments
 
 - UCSB Plat for providing professor profile data
-- Rate My Professor for rating information
 - UCSB community for feedback and testing
