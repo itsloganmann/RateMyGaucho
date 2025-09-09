@@ -136,3 +136,5 @@ MIT © 2025
 
 - UCSB Plat for providing professor profile data
 - UCSB community for feedback and testing
+
+[Privacy Policy](https://itsloganmann.github.io/RateMyGaucho/privacy.html)
