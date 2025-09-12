@@ -2,6 +2,8 @@
 
 RateMyGaucho enhances UCSB GOLD by showing professor ratings inline on course result pages. It reads a packaged CSV dataset locally (no scraping, no external API calls) and links to UCSB Plat for profiles and curriculum browsing.
 
+ **Demo Video**: https://drive.google.com/file/d/1bIbBjEgG5T8S7LqekHbqtfktfHyuWeSi/view?usp=sharing
+
 ## Features
 
 ### Enhanced Rating Display
