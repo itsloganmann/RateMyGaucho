@@ -409,7 +409,7 @@ function extractCourseCodeFromRow(row) {
 		// Look for course patterns in potential header text
 		let courseMatch = null;
 		
-		// Pattern 1: "ANTH 3 - INTRO ARCH" (most common GOLD format)
+		// Pattern 1: "ANTH      3   - INTRO ARCH" (UCSB GOLD format with extra spaces)
 		courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\s*[-–]\s*(.+)/);
 		if (courseMatch) {
 			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
@@ -419,23 +419,33 @@ function extractCourseCodeFromRow(row) {
 			break;
 		}
 		
-		// Pattern 2: Just "ANTH 3" at start of text
-		courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)(?:\s|$)/);
+		// Pattern 2: Handle UCSB GOLD spaced format "ANTH      3   -"
+		courseMatch = text.match(/^([A-Z]{2,6})\s{2,}(\d{1,3}[A-Z]?)\s*[-–]/);
 		if (courseMatch) {
 			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
 			debugStats.textPatternsFound++;
 			debugStats.potentialCourses.push({pattern: 2, code: bestMatch, text: text.slice(0, 100)});
-			console.log('✅ PATTERN 2 MATCH:', bestMatch, 'from:', text.slice(0, 80));
+			console.log('✅ PATTERN 2 MATCH (spaced):', bestMatch, 'from:', text.slice(0, 80));
 			break;
 		}
 		
-		// Pattern 3: Course code within text (more permissive)
-		courseMatch = text.match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\b/);
-		if (courseMatch && !bestMatch && !/Location|Building|Hall|Room|Street|Ave|Blvd/i.test(text)) {
+		// Pattern 3: Just "ANTH 3" at start of text
+		courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)(?:\s|$)/);
+		if (courseMatch) {
 			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
 			debugStats.textPatternsFound++;
 			debugStats.potentialCourses.push({pattern: 3, code: bestMatch, text: text.slice(0, 100)});
 			console.log('✅ PATTERN 3 MATCH:', bestMatch, 'from:', text.slice(0, 80));
+			break;
+		}
+		
+		// Pattern 4: Course code within text (more permissive)
+		courseMatch = text.match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\b/);
+		if (courseMatch && !bestMatch && !/Location|Building|Hall|Room|Street|Ave|Blvd/i.test(text)) {
+			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
+			debugStats.textPatternsFound++;
+			debugStats.potentialCourses.push({pattern: 4, code: bestMatch, text: text.slice(0, 100)});
+			console.log('✅ PATTERN 4 MATCH:', bestMatch, 'from:', text.slice(0, 80));
 		}
 		
 		// Store potential matches for debugging
@@ -656,6 +666,8 @@ function observeAndRender() {
 			if (node.dataset.rmgInitialized === '1') continue;
 			node.dataset.rmgInitialized = '1';
 			totalProcessed++;
+			
+			console.log(`\n👤 === PROCESSING INSTRUCTOR ${totalProcessed}/${nodes.length} ===`);
 			
 			const info = extractInstructorInfo(node);
 			console.log('[RateMyGaucho] Processing:', info.raw, '-> names:', info.names);
@@ -1165,70 +1177,169 @@ function renderCard(anchorNode, record, courseRec = null) {
 }
 
 function renderCourseMeta(courseRec) {
+	if (!courseRec) return null;
+	
+	console.log('🎨 Rendering course metadata for:', courseRec.courseName);
+	
 	const courseMeta = document.createElement('div');
 	courseMeta.className = 'rmg-course';
 
-	// Grading Basis chip
+	// Header with course name and grading basis
+	const header = document.createElement('div');
+	header.className = 'rmg-course-header';
+	
+	if (courseRec.courseName) {
+		const courseTitle = document.createElement('div');
+		courseTitle.className = 'rmg-course-title';
+		courseTitle.textContent = courseRec.courseName;
+		header.appendChild(courseTitle);
+	}
+
 	if (courseRec.gradingBasis) {
 		const chip = document.createElement('span');
 		chip.className = 'rmg-chip';
 		chip.textContent = courseRec.gradingBasis;
-		courseMeta.appendChild(chip);
+		header.appendChild(chip);
 	}
 
-	// Enrollment Trend Sparkline
-	if (courseRec.enrollmentTrend && courseRec.enrollmentTrend.length > 1) {
+	courseMeta.appendChild(header);
+
+	// Stats row with enrollment and grade data
+	const statsRow = document.createElement('div');
+	statsRow.className = 'rmg-course-stats';
+
+	// Enrollment trend with sparkline and numbers
+	if (courseRec.enrollmentTrend && courseRec.enrollmentTrend.length > 0) {
+		const enrollSection = document.createElement('div');
+		enrollSection.className = 'rmg-stat-section';
+		
+		const enrollLabel = document.createElement('div');
+		enrollLabel.className = 'rmg-stat-label';
+		enrollLabel.textContent = 'Enrollment';
+		enrollSection.appendChild(enrollLabel);
+		
+		// Current enrollment (most recent)
+		const currentEnrollment = courseRec.enrollmentTrend[courseRec.enrollmentTrend.length - 1];
+		if (typeof currentEnrollment === 'number') {
+			const enrollNumber = document.createElement('div');
+			enrollNumber.className = 'rmg-stat-number';
+			enrollNumber.textContent = currentEnrollment.toString();
+			enrollSection.appendChild(enrollNumber);
+		}
+		
+		// Sparkline
 		const enrollSpark = document.createElement('div');
-		enrollSpark.className = 'rmg-spark rmg-spark--enroll';
-		enrollSpark.setAttribute('aria-label', `Enrollment trend: ${courseRec.enrollmentTrend.join(', ')}`);
+		enrollSpark.className = 'rmg-sparkline';
+		enrollSpark.setAttribute('aria-label', `Enrollment trend: ${courseRec.enrollmentTrend.join(' → ')}`);
 		
 		const maxVal = Math.max(...courseRec.enrollmentTrend.filter(v => typeof v === 'number' && !isNaN(v)));
 		if (maxVal > 0) {
-			courseRec.enrollmentTrend.forEach(val => {
+			courseRec.enrollmentTrend.forEach((val, i) => {
 				if (typeof val === 'number' && !isNaN(val)) {
 					const bar = document.createElement('span');
-					bar.style.height = `${Math.max(2, (val / maxVal) * 16)}px`;
-					bar.title = `Enrollment: ${val}`;
+					bar.className = 'rmg-spark-bar';
+					bar.style.height = `${Math.max(3, (val / maxVal) * 24)}px`;
+					bar.title = `Quarter ${i + 1}: ${val} students`;
 					enrollSpark.appendChild(bar);
 				}
 			});
-			courseMeta.appendChild(enrollSpark);
+			enrollSection.appendChild(enrollSpark);
 		}
+		
+		statsRow.appendChild(enrollSection);
 	}
 
-	// Grading Trend
+	// Grade distribution
 	if (courseRec.gradingTrend && courseRec.gradingTrend.length > 0) {
-		const gradeSpark = document.createElement('div');
-		gradeSpark.className = 'rmg-spark rmg-spark--grade';
-		gradeSpark.setAttribute('aria-label', `Grading trend: ${courseRec.gradingTrend.join(' ')}`);
+		const gradeSection = document.createElement('div');
+		gradeSection.className = 'rmg-stat-section';
 		
-		courseRec.gradingTrend.slice(0, 8).forEach(grade => {
+		const gradeLabel = document.createElement('div');
+		gradeLabel.className = 'rmg-stat-label';
+		gradeLabel.textContent = 'Recent Grades';
+		gradeSection.appendChild(gradeLabel);
+		
+		const gradeDisplay = document.createElement('div');
+		gradeDisplay.className = 'rmg-grade-pills';
+		
+		// Show recent grade distribution
+		const recentGrades = courseRec.gradingTrend.slice(-4); // Last 4 quarters
+		recentGrades.forEach((grade, i) => {
 			if (typeof grade === 'string' && grade.trim()) {
-				const tick = document.createElement('span');
-				tick.title = `Grade: ${grade}`;
-				tick.textContent = grade.charAt(0);
-				gradeSpark.appendChild(tick);
+				const gradePill = document.createElement('span');
+				gradePill.className = `rmg-grade-pill rmg-grade-${getGradeClass(grade)}`;
+				gradePill.textContent = grade.trim();
+				gradePill.title = `Quarter ${recentGrades.length - i}: ${grade}`;
+				gradeDisplay.appendChild(gradePill);
 			}
 		});
 		
-		if (gradeSpark.children.length > 0) {
-			courseMeta.appendChild(gradeSpark);
-		}
+		gradeSection.appendChild(gradeDisplay);
+		statsRow.appendChild(gradeSection);
 	}
 
-	// Recent Review snippet
+	if (statsRow.children.length > 0) {
+		courseMeta.appendChild(statsRow);
+	}
+
+	// Recent student review
 	if (courseRec.recentReviews && courseRec.recentReviews.length > 0) {
 		const firstReview = courseRec.recentReviews[0];
 		if (typeof firstReview === 'string' && firstReview.trim()) {
-			const quote = document.createElement('div');
-			quote.className = 'rmg-quote';
-			// Truncate to ~120 chars with ellipsis
-			const reviewText = firstReview.length > 120 ? 
-				firstReview.slice(0, 120) + '…' : firstReview;
-			quote.textContent = `"${reviewText}"`;
-			courseMeta.appendChild(quote);
+			const reviewSection = document.createElement('div');
+			reviewSection.className = 'rmg-review-section';
+			
+			const reviewIcon = document.createElement('span');
+			reviewIcon.className = 'rmg-review-icon';
+			reviewIcon.textContent = '💬';
+			reviewSection.appendChild(reviewIcon);
+			
+			const reviewText = document.createElement('div');
+			reviewText.className = 'rmg-review-text';
+			// Clean up the review text and truncate nicely
+			const cleanReview = firstReview.replace(/[="]/g, '').trim();
+			const truncatedReview = cleanReview.length > 140 ? 
+				cleanReview.slice(0, 140) + '…' : cleanReview;
+			reviewText.textContent = `"${truncatedReview}"`;
+			reviewSection.appendChild(reviewText);
+			
+			// Review metadata if available
+			const reviewMeta = document.createElement('div');
+			reviewMeta.className = 'rmg-review-meta';
+			reviewMeta.textContent = `Recent student feedback`;
+			reviewSection.appendChild(reviewMeta);
+			
+			courseMeta.appendChild(reviewSection);
 		}
 	}
 
+	// Course link if available
+	if (courseRec.courseUrl) {
+		const linkSection = document.createElement('div');
+		linkSection.className = 'rmg-course-actions';
+		
+		const courseLink = document.createElement('a');
+		courseLink.className = 'rmg-course-link';
+		courseLink.href = courseRec.courseUrl;
+		courseLink.target = '_blank';
+		courseLink.rel = 'noopener noreferrer';
+		courseLink.textContent = 'View Course Details';
+		courseLink.title = 'Open course page on UCSB Plat';
+		linkSection.appendChild(courseLink);
+		
+		courseMeta.appendChild(linkSection);
+	}
+
 	return courseMeta.children.length > 0 ? courseMeta : null;
+}
+
+// Helper function to determine grade class for styling
+function getGradeClass(grade) {
+	const g = grade.toUpperCase().trim();
+	if (g.startsWith('A')) return 'excellent';
+	if (g.startsWith('B')) return 'good'; 
+	if (g.startsWith('C')) return 'average';
+	if (g.startsWith('D')) return 'below';
+	if (g.startsWith('F')) return 'failing';
+	return 'other';
 }
