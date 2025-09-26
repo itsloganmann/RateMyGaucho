@@ -1,5 +1,11 @@
 (function debugBanner(){ try { console.log('[RateMyGaucho] content v1.1.0 at', location.href); } catch(_){} })();
 
+// Check if Papa Parse is available immediately
+console.log('[RateMyGaucho] Papa Parse check:', typeof Papa !== 'undefined' ? 'Available' : 'NOT AVAILABLE');
+if (typeof Papa === 'undefined') {
+	console.error('[RateMyGaucho] CRITICAL: Papa Parse failed to load! Course metadata will not work.');
+}
+
 // Message probe to verify content script presence from page console
 try {
 	window.addEventListener('message', ev => {
@@ -46,49 +52,103 @@ async function ensureRatingsLoaded() {
 	return __rmg_loading;
 }
 
+// Simple CSV parser fallback for when Papa Parse fails
+function parseSimpleCsv(csvText) {
+	const lines = csvText.split(/\r?\n/).filter(Boolean);
+	if (!lines.length) return [];
+	
+	const headers = lines[0].split(',').map(h => h.trim());
+	const records = [];
+	
+	for (let i = 1; i < lines.length; i++) {
+		const line = lines[i];
+		if (!line.trim()) continue;
+		
+		// Simple parsing - won't handle all edge cases but should work for basic data
+		const values = [];
+		let current = '';
+		let inQuotes = false;
+		
+		for (let j = 0; j < line.length; j++) {
+			const char = line[j];
+			if (char === '"' && (j === 0 || line[j-1] !== '\\')) {
+				inQuotes = !inQuotes;
+			} else if (char === ',' && !inQuotes) {
+				values.push(current.trim());
+				current = '';
+			} else {
+				current += char;
+			}
+		}
+		values.push(current.trim());
+		
+		if (values.length >= headers.length) {
+			const record = {};
+			headers.forEach((header, idx) => {
+				record[header] = values[idx] || '';
+			});
+			records.push(record);
+		}
+	}
+	
+	return records;
+}
+
 async function ensureCourseDataLoaded() {
-	if (__rmg_courseLookup) return __rmg_courseLookup;
-	if (__rmg_courseLoading) return __rmg_courseLoading;
+	console.log('[RateMyGaucho] ensureCourseDataLoaded() called');
+	if (__rmg_courseLookup) {
+		console.log('[RateMyGaucho] Course lookup already cached, returning');
+		return __rmg_courseLookup;
+	}
+	if (__rmg_courseLoading) {
+		console.log('[RateMyGaucho] Course loading in progress, waiting...');
+		return __rmg_courseLoading;
+	}
+	
+	console.log('[RateMyGaucho] Starting new course data loading...');
 	__rmg_courseLoading = (async () => {
 		try {
-			// Wait for Papa to be available
-			let attempts = 0;
-			while (typeof Papa === 'undefined' && attempts < 50) {
-				await new Promise(resolve => setTimeout(resolve, 100));
-				attempts++;
-			}
-			
-			if (typeof Papa === 'undefined') {
-				console.log('[RateMyGaucho] Papa Parse not available, using fallback parser');
-				return null;
-			}
-			
-			console.log('[RateMyGaucho] Papa Parse available, loading course data...');
+			console.log('[RateMyGaucho] Starting course data load...');
 			const csvUrl = chrome.runtime.getURL('ucsb_courses_final_corrected.csv');
+			console.log('[RateMyGaucho] Fetching CSV from:', csvUrl);
+			
 			const res = await fetch(csvUrl);
 			if (!res.ok) {
 				console.log('[RateMyGaucho] Failed to fetch course CSV:', res.status);
 				return null;
 			}
+			
 			const csvText = await res.text();
 			console.log('[RateMyGaucho] Course CSV loaded, length:', csvText.length);
 			
-			const results = Papa.parse(csvText, { 
-				header: true, 
-				skipEmptyLines: true,
-				transformHeader: (header) => header.trim()
-			});
+			let records;
 			
-			if (results.errors.length > 0) {
-				console.log('[RateMyGaucho] Course CSV parse errors:', results.errors.slice(0, 3));
+			// Try Papa Parse first if available
+			if (typeof Papa !== 'undefined') {
+				console.log('[RateMyGaucho] Using Papa Parse for CSV parsing');
+				const results = Papa.parse(csvText, { 
+					header: true, 
+					skipEmptyLines: true,
+					transformHeader: (header) => header.trim()
+				});
+				
+				if (results.errors.length > 0) {
+					console.log('[RateMyGaucho] Papa Parse errors:', results.errors.slice(0, 3));
+				}
+				
+				records = results.data;
+			} else {
+				// Use fallback parser
+				console.log('[RateMyGaucho] Using fallback CSV parser');
+				records = parseSimpleCsv(csvText);
 			}
 			
-			console.log('[RateMyGaucho] Course records parsed:', results.data.length);
-			__rmg_courseLookup = buildCourseLookup(results.data);
+			console.log('[RateMyGaucho] Course records parsed:', records.length);
+			__rmg_courseLookup = buildCourseLookup(records);
 			console.log('[RateMyGaucho] Course lookup built, entries:', __rmg_courseLookup.size);
 			return __rmg_courseLookup;
 		} catch (_e) {
-			console.log('[RateMyGaucho] Failed to load course data:', _e);
+			console.error('[RateMyGaucho] Failed to load course data:', _e);
 			return null;
 		} finally {
 			__rmg_courseLoading = null;
@@ -240,19 +300,40 @@ function extractCourseCodeFromRow(row) {
 	if (!row) return null;
 	
 	// Look for course codes in various cells within the row
-	const cells = row.querySelectorAll('td, th, span, div');
+	const cells = row.querySelectorAll('td, th, span, div, a');
+	let bestMatch = null;
 	
 	for (const cell of cells) {
 		const text = (cell.textContent || '').trim();
 		
-		// Match patterns like "PSTAT 596", "ME 197", "ITAL 1", "CHEM 109A"
-		const courseMatch = text.match(/\b([A-Z]{2,6})\s*(\d{1,3}[A-Z]?)\b/);
+		// Multiple patterns for different course code formats
+		let courseMatch = null;
+		
+		// Pattern 1: "ANTH 3 - INTRO ARCH" (with dash and title)
+		courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\s*(?:-|–)/);
 		if (courseMatch) {
-			return `${courseMatch[1]} ${courseMatch[2]}`;
+			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
+			console.log('[RateMyGaucho] Course code pattern 1:', bestMatch, 'from:', text);
+			break;
+		}
+		
+		// Pattern 2: Just "ANTH 3" or similar
+		courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)$/);
+		if (courseMatch) {
+			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
+			console.log('[RateMyGaucho] Course code pattern 2:', bestMatch, 'from:', text);
+			break;
+		}
+		
+		// Pattern 3: Within longer text like "Space for ANTH 3 students"
+		courseMatch = text.match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\b/);
+		if (courseMatch && !bestMatch) {
+			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
+			console.log('[RateMyGaucho] Course code pattern 3:', bestMatch, 'from:', text);
 		}
 	}
 	
-	return null;
+	return bestMatch;
 }
 
 function observeAndRender() {
@@ -271,10 +352,12 @@ function observeAndRender() {
 		if (!nodes.length) return;
 		
 		// Load both datasets in parallel
+		console.log('[RateMyGaucho] Loading professor and course data in parallel...');
 		const [lookup, courseLookup] = await Promise.all([
 			ensureRatingsLoaded(),
 			ensureCourseDataLoaded()
 		]);
+		console.log('[RateMyGaucho] Parallel loading complete. Professor data:', !!lookup, 'Course data:', !!courseLookup);
 		if (!lookup) return;
 		const sample = nodes.slice(0, 5).map(n => (n.textContent||'').trim().replace(/\s+/g,' '));
 		console.log('[RateMyGaucho] sample candidate texts:', sample);
