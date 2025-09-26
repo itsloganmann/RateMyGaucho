@@ -51,19 +51,41 @@ async function ensureCourseDataLoaded() {
 	if (__rmg_courseLoading) return __rmg_courseLoading;
 	__rmg_courseLoading = (async () => {
 		try {
+			// Wait for Papa to be available
+			let attempts = 0;
+			while (typeof Papa === 'undefined' && attempts < 50) {
+				await new Promise(resolve => setTimeout(resolve, 100));
+				attempts++;
+			}
+			
+			if (typeof Papa === 'undefined') {
+				console.log('[RateMyGaucho] Papa Parse not available, using fallback parser');
+				return null;
+			}
+			
+			console.log('[RateMyGaucho] Papa Parse available, loading course data...');
 			const csvUrl = chrome.runtime.getURL('ucsb_courses_final_corrected.csv');
 			const res = await fetch(csvUrl);
-			if (!res.ok) return null;
+			if (!res.ok) {
+				console.log('[RateMyGaucho] Failed to fetch course CSV:', res.status);
+				return null;
+			}
 			const csvText = await res.text();
+			console.log('[RateMyGaucho] Course CSV loaded, length:', csvText.length);
+			
 			const results = Papa.parse(csvText, { 
 				header: true, 
 				skipEmptyLines: true,
 				transformHeader: (header) => header.trim()
 			});
+			
 			if (results.errors.length > 0) {
 				console.log('[RateMyGaucho] Course CSV parse errors:', results.errors.slice(0, 3));
 			}
+			
+			console.log('[RateMyGaucho] Course records parsed:', results.data.length);
 			__rmg_courseLookup = buildCourseLookup(results.data);
+			console.log('[RateMyGaucho] Course lookup built, entries:', __rmg_courseLookup.size);
 			return __rmg_courseLookup;
 		} catch (_e) {
 			console.log('[RateMyGaucho] Failed to load course data:', _e);
@@ -84,8 +106,13 @@ function normalizeCourseCode(s) {
 
 function buildCourseLookup(records) {
 	const map = new Map();
+	let processed = 0, skipped = 0;
+	
 	for (const rec of records) {
-		if (!rec.course_name) continue;
+		if (!rec.course_name) {
+			skipped++;
+			continue;
+		}
 		try {
 			// Process the record fields
 			const processedRec = {
@@ -100,12 +127,22 @@ function buildCourseLookup(records) {
 			const normalizedCode = normalizeCourseCode(processedRec.courseName);
 			if (normalizedCode) {
 				map.set(normalizedCode, processedRec);
+				processed++;
+				
+				// Log first few entries for debugging
+				if (processed <= 3) {
+					console.log('[RateMyGaucho] Course entry:', normalizedCode, '->', processedRec);
+				}
+			} else {
+				skipped++;
 			}
 		} catch (e) {
-			// Skip problematic records
+			skipped++;
 			continue;
 		}
 	}
+	
+	console.log(`[RateMyGaucho] Course lookup: processed ${processed}, skipped ${skipped}`);
 	return map;
 }
 
@@ -264,8 +301,15 @@ function observeAndRender() {
 			const courseCode = extractCourseCodeFromRow(row);
 			const courseRec = courseLookup && courseCode ? courseLookup.get(normalizeCourseCode(courseCode)) : null;
 			
-			if (courseCode && courseRec) {
-				console.log('[RateMyGaucho] Course matched:', courseCode, '->', courseRec.courseName);
+			if (courseCode) {
+				console.log('[RateMyGaucho] Course code found:', courseCode);
+				if (courseRec) {
+					console.log('[RateMyGaucho] Course matched:', courseCode, '->', courseRec.courseName);
+				} else {
+					console.log('[RateMyGaucho] Course not found in lookup:', normalizeCourseCode(courseCode));
+				}
+			} else if (row) {
+				console.log('[RateMyGaucho] No course code found in row for instructor:', info.raw);
 			}
 			
 			const match = matchInstructor(info, lookup);
