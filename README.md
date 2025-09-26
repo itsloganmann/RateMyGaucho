@@ -19,9 +19,10 @@ RateMyGaucho enhances UCSB GOLD by showing professor ratings inline on course re
 - **Debug Logging**: Console logs for troubleshooting matching issues
 
 ### Data Integration
-- **Single CSV Source**: Uses `scores.csv` for both ratings and UCSB Plat profile links
+- **Dual CSV Sources**: Uses `scores.csv` for professor ratings and `ucsb_courses_final_corrected.csv` for course metadata
 - **Local Data Processing**: Fast, privacy-preserving local CSV lookup (no network requests)
 - **UCSB Plat Integration**: Direct links to professor profiles and curriculum pages
+- **Course Metadata**: Shows grading basis, enrollment trends, grade distributions, and recent reviews
 - **Real-time Updates**: Automatically detects and processes new course listings
 
 ### User Interface
@@ -76,26 +77,36 @@ The archive will be created at `dist/RateMyGaucho.zip`, excluding development fi
 
 ```
 RateMyGaucho/
-├── manifest.json              # MV3 extension manifest
+├── manifest.json                        # MV3 extension manifest
 ├── content/
-│   ├── content.js            # Main content script with matching logic
-│   └── styles.css            # Card styling and star animations
-├── scores.csv                # Professor ratings and UCSB Plat links
-├── gaucho.png                # Gaucho image for star ratings
-├── icons/                    # Extension icons (16px, 48px, 128px)
-├── scripts/                  # Build and packaging scripts
-└── README.md                 # This file
+│   ├── papaparse.min.js                # CSV parsing library
+│   ├── content.js                      # Main content script with matching logic
+│   └── styles.css                      # Card styling and star animations
+├── scores.csv                          # Professor ratings and UCSB Plat links
+├── ucsb_courses_final_corrected.csv    # Course metadata and trends
+├── gaucho.png                          # Gaucho image for star ratings
+├── icons/                              # Extension icons (16px, 48px, 128px)
+├── scripts/                            # Build and packaging scripts
+└── README.md                           # This file
 ```
 
 ## Data Format
 
-The `scores.csv` file contains professor data with the following columns:
+### Professor Ratings (`scores.csv`)
 - `department`: Professor's department
 - `first_name`: Professor's first name
 - `last_name`: Professor's last name
 - `rmp_score`: Rate My Professor score (0.0-5.0)
 - `num_reviews`: Number of reviews
 - `profile_url`: UCSB Plat profile URL
+
+### Course Metadata (`ucsb_courses_final_corrected.csv`)
+- `course_name`: Course code (e.g., "PSTAT 596", "ITAL 1")
+- `course_url`: UCSB Plat curriculum page URL
+- `grading_basis`: Grading method (e.g., "Letter Grade", "Pass/No Pass")
+- `grading_trend`: Array of recent grade distributions as JSON strings
+- `enrollment_trend`: Array of recent enrollment numbers as JSON
+- `recent_reviews`: Array of recent student review snippets as JSON
 
 ## Star Rating System
 
@@ -121,6 +132,12 @@ The extension uses a sophisticated star rating system:
 - Ensure you're on a UCSB GOLD course search page
 - Check that the page contains course listings with instructor names
 - Verify the extension is active and has proper permissions
+
+### Course Metadata Not Showing
+- Check browser console for CSV loading errors
+- Ensure course code extraction is working (look for "Course matched" in console)
+- Verify `ucsb_courses_final_corrected.csv` is accessible and properly formatted
+- Course codes must match exactly (e.g., "PSTAT 596" vs "PSTAT596")
 
 ## Contributing
 
