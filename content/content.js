@@ -6,6 +6,59 @@ if (typeof Papa === 'undefined') {
 	console.error('[RateMyGaucho] CRITICAL: Papa Parse failed to load! Course metadata will not work.');
 }
 
+// Expose debugging functions to global scope for console testing
+window.rmgDebug = {
+	testCourseExtraction: function(instructorText) {
+		console.log(`🧪 Testing course extraction for instructor: "${instructorText}"`);
+		const nodes = findInstructorNodes();
+		const matchingNodes = nodes.filter(node => (node.textContent || '').includes(instructorText));
+		
+		if (matchingNodes.length === 0) {
+			console.log('❌ No matching instructor nodes found');
+			return;
+		}
+		
+		console.log(`✅ Found ${matchingNodes.length} matching nodes`);
+		matchingNodes.forEach((node, i) => {
+			console.log(`\n--- Node ${i + 1} ---`);
+			const row = node.closest('tr, .row, .resultsRow, .SSR_CLSRSLT_WRK, .sectionRow, .CourseRow');
+			const courseCode = extractCourseCodeFromRow(row);
+			console.log(`Course code result: ${courseCode || 'null'}`);
+		});
+	},
+	
+	testCourseLookup: function(courseCode) {
+		ensureCourseDataLoaded().then(lookup => {
+			const normalized = normalizeCourseCode(courseCode);
+			console.log(`🔍 Looking up course: "${courseCode}" -> "${normalized}"`);
+			
+			if (lookup && lookup.has(normalized)) {
+				const result = lookup.get(normalized);
+				console.log('✅ Found:', result);
+			} else {
+				console.log('❌ Not found in lookup');
+				if (lookup) {
+					const similar = Array.from(lookup.keys()).filter(k => k.includes(normalized.split(' ')[0])).slice(0, 5);
+					console.log('Similar courses:', similar);
+				}
+			}
+		});
+	},
+	
+	analyzeCurrentPage: function() {
+		analyzePageStructure();
+	},
+	
+	showAllCoursePatterns: function() {
+		const pageText = document.body.textContent || '';
+		const patterns = [...new Set(pageText.match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\s*[-–]?\s*[A-Z]/g) || [])];
+		console.log('All course patterns on page:', patterns.slice(0, 20));
+		return patterns;
+	}
+};
+
+console.log('🛠️  Debug functions available: rmgDebug.testCourseExtraction("INSTRUCTOR_NAME"), rmgDebug.testCourseLookup("ANTH 3"), rmgDebug.analyzeCurrentPage(), rmgDebug.showAllCoursePatterns()');
+
 // Message probe to verify content script presence from page console
 try {
 	window.addEventListener('message', ev => {
@@ -297,80 +350,136 @@ function makeKey(last, first, dept) {
 }
 
 function extractCourseCodeFromRow(row) {
-	if (!row) return null;
+	console.log('\n🔍 === COURSE EXTRACTION DEBUG START ===');
+	
+	if (!row) {
+		console.log('❌ No row provided to extractCourseCodeFromRow');
+		return null;
+	}
+	
+	console.log('📍 Row element:', row.tagName, row.className, row.id);
+	console.log('📍 Row text content:', (row.textContent || '').trim().slice(0, 100));
 	
 	// Strategy 1: Look for course section headers ABOVE the current instructor row
-	// UCSB GOLD typically has course headers separate from instructor detail rows
 	let bestMatch = null;
+	let debugStats = {
+		containersChecked: 0,
+		elementsScanned: 0,
+		textPatternsFound: 0,
+		potentialCourses: []
+	};
 	
 	// Find the container (table or section) that holds this row
 	const container = row.closest('table, .course-section, .results-section') || row.parentElement;
 	
-	if (container) {
-		// Get all elements in the container that might contain course headers
-		const allElements = Array.from(container.querySelectorAll('*'));
-		const rowIndex = allElements.indexOf(row);
+	if (!container) {
+		console.log('❌ No container found for row');
+		return null;
+	}
+	
+	console.log('📦 Container found:', container.tagName, container.className, container.id);
+	debugStats.containersChecked++;
+	
+	// Get all elements in the container that might contain course headers
+	const allElements = Array.from(container.querySelectorAll('*'));
+	const rowIndex = allElements.indexOf(row);
+	
+	console.log('📊 Container stats:');
+	console.log('   - Total elements:', allElements.length);
+	console.log('   - Current row index:', rowIndex);
+	console.log('   - Will search elements:', Math.max(0, rowIndex - 30), 'to', rowIndex);
+	
+	// Search backwards from current row to find course headers (increased from 20 to 30)
+	for (let i = Math.max(0, rowIndex - 30); i < rowIndex; i++) {
+		const element = allElements[i];
+		const text = (element.textContent || '').trim();
+		debugStats.elementsScanned++;
 		
-		// Search backwards from current row to find course headers
-		// Look up to 20 elements back to find the course title
-		for (let i = Math.max(0, rowIndex - 20); i < rowIndex; i++) {
-			const element = allElements[i];
-			const text = (element.textContent || '').trim();
-			
-			// Skip very short or very long text, and common non-course elements
-			if (!text || text.length < 5 || text.length > 150) continue;
-			if (/^(Days|Time|Location|Instructor|Space|Max|Add|Save|Cancel)$/i.test(text)) continue;
-			
-			// Look for course patterns in potential header text
-			let courseMatch = null;
-			
-			// Pattern 1: "ANTH 3 - INTRO ARCH" (most common GOLD format)
-			courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\s*[-–]\s*(.+)/);
-			if (courseMatch) {
-				bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
-				console.log('[RateMyGaucho] Found course header pattern 1:', bestMatch, 'from:', text.slice(0, 50));
-				break;
-			}
-			
-			// Pattern 2: Just "ANTH 3" at start of text
-			courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)(?:\s|$)/);
-			if (courseMatch) {
-				bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
-				console.log('[RateMyGaucho] Found course header pattern 2:', bestMatch, 'from:', text.slice(0, 50));
-				break;
-			}
-			
-			// Pattern 3: Course code within text (more permissive)
-			courseMatch = text.match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\b/);
-			if (courseMatch && !bestMatch && !/Location|Building|Hall|Room/.test(text)) {
-				bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
-				console.log('[RateMyGaucho] Found course header pattern 3:', bestMatch, 'from:', text.slice(0, 50));
-			}
+		// Skip very short or very long text
+		if (!text || text.length < 4 || text.length > 200) continue;
+		
+		// Skip common non-course elements
+		if (/^(Days?|Times?|Locations?|Instructors?|Space|Max|Add|Save|Cancel|View|Cart|Info|Final)$/i.test(text)) continue;
+		if (/^\d+$/.test(text)) continue; // Skip pure numbers
+		if (/^[MTWRFSU\s\n-]+$/.test(text)) continue; // Skip day patterns like "MWF"
+		
+		console.log(`🔎 Element ${i}/${rowIndex}: "${text.slice(0, 60)}"${text.length > 60 ? '...' : ''}`);
+		console.log(`   └─ Tag: ${element.tagName}, Classes: "${element.className}", ID: "${element.id}"`);
+		
+		// Look for course patterns in potential header text
+		let courseMatch = null;
+		
+		// Pattern 1: "ANTH 3 - INTRO ARCH" (most common GOLD format)
+		courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\s*[-–]\s*(.+)/);
+		if (courseMatch) {
+			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
+			debugStats.textPatternsFound++;
+			debugStats.potentialCourses.push({pattern: 1, code: bestMatch, text: text.slice(0, 100)});
+			console.log('✅ PATTERN 1 MATCH:', bestMatch, 'from:', text.slice(0, 80));
+			break;
+		}
+		
+		// Pattern 2: Just "ANTH 3" at start of text
+		courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)(?:\s|$)/);
+		if (courseMatch) {
+			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
+			debugStats.textPatternsFound++;
+			debugStats.potentialCourses.push({pattern: 2, code: bestMatch, text: text.slice(0, 100)});
+			console.log('✅ PATTERN 2 MATCH:', bestMatch, 'from:', text.slice(0, 80));
+			break;
+		}
+		
+		// Pattern 3: Course code within text (more permissive)
+		courseMatch = text.match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\b/);
+		if (courseMatch && !bestMatch && !/Location|Building|Hall|Room|Street|Ave|Blvd/i.test(text)) {
+			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
+			debugStats.textPatternsFound++;
+			debugStats.potentialCourses.push({pattern: 3, code: bestMatch, text: text.slice(0, 100)});
+			console.log('✅ PATTERN 3 MATCH:', bestMatch, 'from:', text.slice(0, 80));
+		}
+		
+		// Store potential matches for debugging
+		if (courseMatch && !debugStats.potentialCourses.some(p => p.code === `${courseMatch[1]} ${courseMatch[2]}`)) {
+			debugStats.potentialCourses.push({
+				pattern: 'candidate', 
+				code: `${courseMatch[1]} ${courseMatch[2]}`, 
+				text: text.slice(0, 100),
+				rejected: /Location|Building|Hall|Room|Street|Ave|Blvd/i.test(text) ? 'location-pattern' : 'not-best-match'
+			});
 		}
 	}
 	
 	// Strategy 2: If no header found, try DOM traversal upward
 	if (!bestMatch) {
+		console.log('🔄 Strategy 1 failed, trying DOM traversal upward...');
+		
 		let currentElement = row.parentElement;
 		let depth = 0;
 		
-		while (currentElement && depth < 5) {
+		while (currentElement && depth < 8) {
+			console.log(`   🔼 Depth ${depth}: ${currentElement.tagName}.${currentElement.className}`);
+			
 			// Look for elements with course-like content near this row
 			const siblings = Array.from(currentElement.children);
 			const rowPosition = siblings.indexOf(row.closest('tr, div, section')) || 0;
 			
-			// Check previous siblings for course headers
-			for (let i = Math.max(0, rowPosition - 3); i < rowPosition; i++) {
+			console.log(`      Siblings: ${siblings.length}, Row position: ${rowPosition}`);
+			
+			// Check previous siblings for course headers  
+			for (let i = Math.max(0, rowPosition - 5); i < rowPosition; i++) {
 				const sibling = siblings[i];
 				if (!sibling) continue;
 				
 				const text = (sibling.textContent || '').trim();
-				if (text.length < 5 || text.length > 100) continue;
+				if (text.length < 4 || text.length > 150) continue;
+				
+				console.log(`      🔎 Sibling ${i}: "${text.slice(0, 60)}"${text.length > 60 ? '...' : ''}`);
 				
 				const courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)(?:\s*[-–]|\s|$)/);
 				if (courseMatch) {
 					bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
-					console.log('[RateMyGaucho] Found course via DOM traversal:', bestMatch, 'from:', text.slice(0, 50));
+					debugStats.textPatternsFound++;
+					console.log('✅ DOM TRAVERSAL MATCH:', bestMatch, 'from:', text.slice(0, 80));
 					break;
 				}
 			}
@@ -381,21 +490,120 @@ function extractCourseCodeFromRow(row) {
 		}
 	}
 	
-	// Debug: if still no match, show what we're dealing with
+	// Strategy 3: Look for course patterns in page structure
 	if (!bestMatch) {
-		const contextElements = [];
-		let current = row.parentElement;
-		for (let i = 0; i < 3 && current; i++) {
-			const text = (current.textContent || '').trim();
-			if (text && text.length < 200) {
-				contextElements.push(text.slice(0, 80));
+		console.log('🔄 DOM traversal failed, analyzing page structure...');
+		
+		// Look for common UCSB GOLD course header patterns
+		const pageText = document.body.textContent || '';
+		const courseMatches = pageText.match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\s*[-–]\s*[A-Z]/g);
+		
+		if (courseMatches && courseMatches.length > 0) {
+			console.log('📋 Course patterns found on page:', courseMatches.slice(0, 10));
+			
+			// Try to correlate with instructor position
+			const instructorText = (row.textContent || '').trim();
+			console.log('👤 Instructor context:', instructorText);
+			
+			// Simple heuristic: use first course pattern found (could be improved)
+			const firstCourse = courseMatches[0].match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)/);
+			if (firstCourse) {
+				bestMatch = `${firstCourse[1]} ${firstCourse[2]}`;
+				console.log('⚠️  Using heuristic match:', bestMatch);
 			}
-			current = current.parentElement;
 		}
-		console.log('[RateMyGaucho] Course code search failed. Context:', contextElements.slice(0, 2));
 	}
 	
+	// Final debugging output
+	console.log('📈 Debug Statistics:', debugStats);
+	console.log('🎯 Final result:', bestMatch || 'NO MATCH');
+	
+	if (!bestMatch) {
+		console.log('❌ EXTRACTION FAILED - Detailed Context:');
+		
+		// Show the DOM hierarchy around this row
+		let current = row;
+		for (let i = 0; i < 5 && current; i++) {
+			const text = (current.textContent || '').trim();
+			console.log(`   ${i === 0 ? '🎯' : '⬆️'} ${current.tagName}.${current.className}: "${text.slice(0, 100)}"${text.length > 100 ? '...' : ''}`);
+			current = current.parentElement;
+		}
+		
+		// Show potential courses we found but rejected
+		if (debugStats.potentialCourses.length > 0) {
+			console.log('🤔 Potential courses found but not selected:');
+			debugStats.potentialCourses.forEach((course, i) => {
+				console.log(`   ${i + 1}. Pattern ${course.pattern}: "${course.code}" from "${course.text}"${course.rejected ? ` (rejected: ${course.rejected})` : ''}`);
+			});
+		}
+	} else {
+		console.log('✅ SUCCESS: Course code extracted:', bestMatch);
+	}
+	
+	console.log('🔍 === COURSE EXTRACTION DEBUG END ===\n');
 	return bestMatch;
+}
+
+function analyzePageStructure() {
+	console.log('\n📋 === PAGE STRUCTURE ANALYSIS ===');
+	
+	const pageInfo = {
+		title: document.title,
+		url: window.location.href,
+		domain: window.location.hostname,
+		pathname: window.location.pathname
+	};
+	
+	console.log('🌐 Page info:', pageInfo);
+	
+	// Look for UCSB GOLD specific elements
+	const goldElements = {
+		tables: document.querySelectorAll('table').length,
+		forms: document.querySelectorAll('form').length,
+		courseResults: document.querySelectorAll('[class*="result"], [class*="course"], [id*="result"], [id*="course"]').length,
+		instructorElements: document.querySelectorAll('[class*="instructor"], [id*="instructor"]').length
+	};
+	
+	console.log('🏗️  GOLD elements found:', goldElements);
+	
+	// Analyze text patterns on page
+	const pageText = document.body.textContent || '';
+	const coursePatterns = pageText.match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\s*[-–]/g) || [];
+	const uniqueCourses = [...new Set(coursePatterns)].slice(0, 15);
+	
+	console.log('📚 Course patterns detected on page:', uniqueCourses.length ? uniqueCourses : 'none');
+	
+	// Check for common UCSB GOLD table structures
+	const tables = Array.from(document.querySelectorAll('table'));
+	console.log('📊 Table analysis:');
+	tables.slice(0, 3).forEach((table, i) => {
+		const rows = table.querySelectorAll('tr').length;
+		const cells = table.querySelectorAll('td, th').length;
+		const hasInstructorColumn = Array.from(table.querySelectorAll('th, td'))
+			.some(cell => /instructor/i.test(cell.textContent || ''));
+		
+		console.log(`   Table ${i + 1}: ${rows} rows, ${cells} cells, instructor column: ${hasInstructorColumn}`);
+		
+		// Show sample header row
+		const headerRow = table.querySelector('tr');
+		if (headerRow) {
+			const headers = Array.from(headerRow.querySelectorAll('th, td'))
+				.map(cell => (cell.textContent || '').trim())
+				.filter(text => text.length > 0)
+				.slice(0, 6);
+			console.log(`   Sample headers: [${headers.join(', ')}]`);
+		}
+	});
+	
+	// Look for course section headers in the DOM
+	const potentialCourseHeaders = Array.from(document.querySelectorAll('*'))
+		.map(el => (el.textContent || '').trim())
+		.filter(text => /^[A-Z]{2,6}\s+\d{1,3}[A-Z]?\s*[-–]/.test(text))
+		.slice(0, 10);
+		
+	console.log('🎯 Potential course headers in DOM:', potentialCourseHeaders.length ? potentialCourseHeaders : 'none found');
+	
+	console.log('📋 === PAGE STRUCTURE ANALYSIS END ===\n');
 }
 
 function observeAndRender() {
@@ -409,18 +617,35 @@ function observeAndRender() {
 	}
 
 	async function scan() {
+		console.log('\n🚀 === MAIN SCAN PROCESS START ===');
+		
+		// Analyze page structure first
+		analyzePageStructure();
+		
 		const nodes = findInstructorNodes();
-		console.log('[RateMyGaucho] instructor candidates:', nodes.length);
-		if (!nodes.length) return;
+		console.log('👥 Instructor candidates found:', nodes.length);
+		
+		if (!nodes.length) {
+			console.log('❌ No instructor nodes found - scan aborted');
+			console.log('🚀 === MAIN SCAN PROCESS END ===\n');
+			return;
+		}
 		
 		// Load both datasets in parallel
-		console.log('[RateMyGaucho] Loading professor and course data in parallel...');
+		console.log('📚 Loading professor and course data in parallel...');
 		const [lookup, courseLookup] = await Promise.all([
 			ensureRatingsLoaded(),
 			ensureCourseDataLoaded()
 		]);
-		console.log('[RateMyGaucho] Parallel loading complete. Professor data:', !!lookup, 'Course data:', !!courseLookup);
-		if (!lookup) return;
+		console.log('✅ Data loading results:');
+		console.log('   - Professor data:', !!lookup, `(${lookup ? lookup.size : 0} entries)`);
+		console.log('   - Course data:', !!courseLookup, `(${courseLookup ? courseLookup.size : 0} entries)`);
+		
+		if (!lookup) {
+			console.log('❌ No professor data available - scan aborted');
+			console.log('🚀 === MAIN SCAN PROCESS END ===\n');
+			return;
+		}
 		const sample = nodes.slice(0, 5).map(n => (n.textContent||'').trim().replace(/\s+/g,' '));
 		console.log('[RateMyGaucho] sample candidate texts:', sample);
 		
@@ -475,25 +700,79 @@ function observeAndRender() {
 			
 			const courseRec = courseLookup && courseCode ? courseLookup.get(normalizeCourseCode(courseCode)) : null;
 			
+			console.log('\n🧬 === COURSE LOOKUP DEBUG ===');
+			console.log('👤 Instructor:', info.raw);
+			console.log('🔍 Course code result:', courseCode || 'NULL');
+			
 			if (courseCode) {
 				const normalizedCode = normalizeCourseCode(courseCode);
-				console.log('[RateMyGaucho] Course code found:', courseCode, 'normalized to:', normalizedCode);
+				console.log('🎯 Course normalization:', `"${courseCode}" -> "${normalizedCode}"`);
 				
 				if (courseRec) {
-					console.log('[RateMyGaucho] Course matched:', courseCode, '->', courseRec.courseName);
+					console.log('✅ COURSE MATCHED in lookup!');
+					console.log('   📚 Course:', courseRec.courseName);
+					console.log('   🎓 Grading:', courseRec.gradingBasis);
+					console.log('   📊 Enrollment trend:', courseRec.enrollmentTrend);
+					console.log('   📈 Grade trend:', courseRec.gradingTrend);
+					console.log('   💬 Reviews count:', courseRec.recentReviews?.length || 0);
 				} else {
-					console.log('[RateMyGaucho] Course not found in lookup:', normalizedCode);
-					// Debug: show similar entries to help identify the issue
-					if (courseLookup) {
-						const similarCourses = Array.from(courseLookup.keys())
-							.filter(key => key.startsWith(normalizedCode.split(' ')[0]))
-							.slice(0, 3);
-						console.log('[RateMyGaucho] Similar courses in lookup:', similarCourses);
+					console.log('❌ COURSE NOT FOUND in lookup:', normalizedCode);
+					
+					// Comprehensive similarity search
+					if (courseLookup && courseLookup.size > 0) {
+						console.log('🔍 Lookup diagnostics:');
+						console.log('   - Total courses in lookup:', courseLookup.size);
+						
+						// Show all courses starting with same letters
+						const prefix = normalizedCode.split(' ')[0];
+						const prefixMatches = Array.from(courseLookup.keys())
+							.filter(key => key.startsWith(prefix))
+							.slice(0, 10);
+						console.log(`   - Courses starting with "${prefix}":`, prefixMatches);
+						
+						// Show exact pattern matches
+						const exactPattern = new RegExp(`^${normalizedCode.replace(/\s+/g, '\\s+')}$`, 'i');
+						const exactMatches = Array.from(courseLookup.keys())
+							.filter(key => exactPattern.test(key));
+						console.log(`   - Exact pattern matches for "${normalizedCode}":`, exactMatches);
+						
+						// Show fuzzy matches (similar length and structure)
+						const fuzzyMatches = Array.from(courseLookup.keys())
+							.filter(key => {
+								const parts = key.split(' ');
+								const searchParts = normalizedCode.split(' ');
+								return parts.length === searchParts.length && 
+								       parts[0] === searchParts[0] &&
+								       Math.abs(parts[1]?.length - searchParts[1]?.length) <= 1;
+							})
+							.slice(0, 5);
+						console.log(`   - Fuzzy matches for "${normalizedCode}":`, fuzzyMatches);
+						
+						// Show some random samples from lookup for reference
+						const sampleKeys = Array.from(courseLookup.keys()).slice(0, 10);
+						console.log('   - Sample lookup keys:', sampleKeys);
 					}
 				}
 			} else if (row) {
-				console.log('[RateMyGaucho] No course code found in row for instructor:', info.raw);
+				console.log('❌ NO COURSE CODE extracted for instructor:', info.raw);
+				
+				// Detailed row analysis
+				console.log('🔍 Row analysis:');
+				console.log('   - Row tag:', row.tagName);
+				console.log('   - Row classes:', row.className || 'none');
+				console.log('   - Row ID:', row.id || 'none');
+				console.log('   - Row text (first 100 chars):', (row.textContent || '').slice(0, 100));
+				
+				// Show surrounding DOM context
+				console.log('🌐 DOM context:');
+				let parent = row.parentElement;
+				for (let level = 0; level < 3 && parent; level++) {
+					const text = (parent.textContent || '').trim();
+					console.log(`   ${level + 1}. ${parent.tagName}.${parent.className}: "${text.slice(0, 80)}"${text.length > 80 ? '...' : ''}`);
+					parent = parent.parentElement;
+				}
 			}
+			console.log('🧬 === COURSE LOOKUP DEBUG END ===\n');
 			
 			const match = matchInstructor(info, lookup);
 			if (match) {
@@ -505,7 +784,42 @@ function observeAndRender() {
 			}
 		}
 		
-		console.log(`[RateMyGaucho] Summary: ${matchedCount}/${totalProcessed} instructors matched`);
+		// Final scan summary
+		console.log('\n📊 === SCAN SUMMARY ===');
+		console.log('👥 Instructor processing:');
+		console.log(`   - Candidates found: ${nodes.length}`);
+		console.log(`   - Successfully processed: ${totalProcessed}`);
+		console.log(`   - Professor matches: ${matchedCount}`);
+		console.log(`   - Match rate: ${totalProcessed > 0 ? Math.round((matchedCount / totalProcessed) * 100) : 0}%`);
+		
+		// Course extraction statistics
+		let courseExtractionCount = 0;
+		let courseMatchCount = 0;
+		
+		for (const node of nodes.slice(0, totalProcessed)) {
+			if (node.dataset.rmgInitialized === '1') {
+				const row = node.closest('tr, .row, .resultsRow, .SSR_CLSRSLT_WRK, .sectionRow, .CourseRow');
+				if (row) {
+					// Quick re-check for course codes (non-invasive)
+					const quickCourseCode = (row.textContent || '').match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\b/);
+					if (quickCourseCode) courseExtractionCount++;
+					
+					if (courseLookup) {
+						const normalizedQuick = normalizeCourseCode(`${quickCourseCode?.[1] || ''} ${quickCourseCode?.[2] || ''}`);
+						if (normalizedQuick && courseLookup.has(normalizedQuick)) {
+							courseMatchCount++;
+						}
+					}
+				}
+			}
+		}
+		
+		console.log('📚 Course processing:');
+		console.log(`   - Course codes extracted: ${courseExtractionCount}`);
+		console.log(`   - Course matches in lookup: ${courseMatchCount}`);
+		console.log(`   - Course data available: ${!!courseLookup} (${courseLookup ? courseLookup.size : 0} total)`);
+		
+		console.log('🚀 === MAIN SCAN PROCESS END ===\n');
 	}
 }
 
