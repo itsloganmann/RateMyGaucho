@@ -299,12 +299,25 @@ function makeKey(last, first, dept) {
 function extractCourseCodeFromRow(row) {
 	if (!row) return null;
 	
-	// Look for course codes in various cells within the row
-	const cells = row.querySelectorAll('td, th, span, div, a');
-	let bestMatch = null;
+	// Look for course codes in the row and nearby elements
+	const searchElements = [
+		// Current row elements
+		...row.querySelectorAll('td, th, span, div, a'),
+		// Previous rows (course titles are often in header rows)
+		...Array.from(row.parentElement?.querySelectorAll('tr') || [])
+			.filter(r => r.rowIndex < row.rowIndex)
+			.slice(-3) // Last 3 previous rows
+			.flatMap(r => Array.from(r.querySelectorAll('td, th, span, div, a, strong, b')))
+	];
 	
-	for (const cell of cells) {
-		const text = (cell.textContent || '').trim();
+	let bestMatch = null;
+	let debugInfo = [];
+	
+	for (const element of searchElements) {
+		const text = (element.textContent || '').trim();
+		if (!text || text.length > 100) continue; // Skip very long text
+		
+		debugInfo.push(text);
 		
 		// Multiple patterns for different course code formats
 		let courseMatch = null;
@@ -325,12 +338,17 @@ function extractCourseCodeFromRow(row) {
 			break;
 		}
 		
-		// Pattern 3: Within longer text like "Space for ANTH 3 students"
+		// Pattern 3: Within longer text
 		courseMatch = text.match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\b/);
 		if (courseMatch && !bestMatch) {
 			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
 			console.log('[RateMyGaucho] Course code pattern 3:', bestMatch, 'from:', text);
 		}
+	}
+	
+	// Debug: show what text we examined if no match found
+	if (!bestMatch && debugInfo.length > 0) {
+		console.log('[RateMyGaucho] Course code search failed. Examined texts:', debugInfo.slice(0, 5));
 	}
 	
 	return bestMatch;
@@ -379,17 +397,55 @@ function observeAndRender() {
 				console.log('[RateMyGaucho] Keys for', name, ':', keys.slice(0, 5)); // Show first 5 keys
 			}
 			
-			// Extract course code from the same row
+			// Extract course code from the same row and context
 			const row = node.closest('tr, .row, .resultsRow, .SSR_CLSRSLT_WRK, .sectionRow, .CourseRow');
-			const courseCode = extractCourseCodeFromRow(row);
+			
+			// Enhanced course code extraction with more context
+			let courseCode = null;
+			
+			if (row) {
+				// Try multiple extraction strategies
+				courseCode = extractCourseCodeFromRow(row);
+				
+				// If no course code found, try looking at the table structure
+				if (!courseCode) {
+					const table = row.closest('table');
+					if (table) {
+						// Look for course title in previous rows within the same table
+						const allRows = Array.from(table.querySelectorAll('tr'));
+						const currentRowIndex = allRows.indexOf(row);
+						
+						// Check 5 rows before current row for course titles
+						for (let i = Math.max(0, currentRowIndex - 5); i < currentRowIndex; i++) {
+							const prevRow = allRows[i];
+							const courseMatch = extractCourseCodeFromRow(prevRow);
+							if (courseMatch) {
+								courseCode = courseMatch;
+								console.log('[RateMyGaucho] Course code found in previous row', i, ':', courseCode);
+								break;
+							}
+						}
+					}
+				}
+			}
+			
 			const courseRec = courseLookup && courseCode ? courseLookup.get(normalizeCourseCode(courseCode)) : null;
 			
 			if (courseCode) {
-				console.log('[RateMyGaucho] Course code found:', courseCode);
+				const normalizedCode = normalizeCourseCode(courseCode);
+				console.log('[RateMyGaucho] Course code found:', courseCode, 'normalized to:', normalizedCode);
+				
 				if (courseRec) {
 					console.log('[RateMyGaucho] Course matched:', courseCode, '->', courseRec.courseName);
 				} else {
-					console.log('[RateMyGaucho] Course not found in lookup:', normalizeCourseCode(courseCode));
+					console.log('[RateMyGaucho] Course not found in lookup:', normalizedCode);
+					// Debug: show similar entries to help identify the issue
+					if (courseLookup) {
+						const similarCourses = Array.from(courseLookup.keys())
+							.filter(key => key.startsWith(normalizedCode.split(' ')[0]))
+							.slice(0, 3);
+						console.log('[RateMyGaucho] Similar courses in lookup:', similarCourses);
+					}
 				}
 			} else if (row) {
 				console.log('[RateMyGaucho] No course code found in row for instructor:', info.raw);
