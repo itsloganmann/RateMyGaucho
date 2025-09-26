@@ -1,4 +1,4 @@
-(function debugBanner(){ try { console.log('[RateMyGaucho] content v1.0.4 at', location.href); } catch(_){} })();
+(function debugBanner(){ try { console.log('[RateMyGaucho] content v1.1.0 at', location.href); } catch(_){} })();
 
 // Message probe to verify content script presence from page console
 try {
@@ -21,6 +21,10 @@ try {
 let __rmg_lookup = null;
 let __rmg_loading = null;
 
+// Course data cache
+let __rmg_courseLookup = null;
+let __rmg_courseLoading = null;
+
 async function ensureRatingsLoaded() {
 	if (__rmg_lookup) return __rmg_lookup;
 	if (__rmg_loading) return __rmg_loading;
@@ -40,6 +44,96 @@ async function ensureRatingsLoaded() {
 		}
 	})();
 	return __rmg_loading;
+}
+
+async function ensureCourseDataLoaded() {
+	if (__rmg_courseLookup) return __rmg_courseLookup;
+	if (__rmg_courseLoading) return __rmg_courseLoading;
+	__rmg_courseLoading = (async () => {
+		try {
+			const csvUrl = chrome.runtime.getURL('ucsb_courses_final_corrected.csv');
+			const res = await fetch(csvUrl);
+			if (!res.ok) return null;
+			const csvText = await res.text();
+			const results = Papa.parse(csvText, { 
+				header: true, 
+				skipEmptyLines: true,
+				transformHeader: (header) => header.trim()
+			});
+			if (results.errors.length > 0) {
+				console.log('[RateMyGaucho] Course CSV parse errors:', results.errors.slice(0, 3));
+			}
+			__rmg_courseLookup = buildCourseLookup(results.data);
+			return __rmg_courseLookup;
+		} catch (_e) {
+			console.log('[RateMyGaucho] Failed to load course data:', _e);
+			return null;
+		} finally {
+			__rmg_courseLoading = null;
+		}
+	})();
+	return __rmg_courseLoading;
+}
+
+function normalizeCourseCode(s) {
+	return (s || '')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.toUpperCase();
+}
+
+function buildCourseLookup(records) {
+	const map = new Map();
+	for (const rec of records) {
+		if (!rec.course_name) continue;
+		try {
+			// Process the record fields
+			const processedRec = {
+				courseName: (rec.course_name || '').trim(),
+				courseUrl: (rec.course_url || '').trim(),
+				gradingBasis: (rec.grading_basis || '').trim(),
+				gradingTrend: parseArrayField(rec.grading_trend),
+				enrollmentTrend: parseArrayField(rec.enrollment_trend),
+				recentReviews: parseArrayField(rec.recent_reviews)
+			};
+			
+			const normalizedCode = normalizeCourseCode(processedRec.courseName);
+			if (normalizedCode) {
+				map.set(normalizedCode, processedRec);
+			}
+		} catch (e) {
+			// Skip problematic records
+			continue;
+		}
+	}
+	return map;
+}
+
+function parseArrayField(field) {
+	if (!field) return [];
+	if (Array.isArray(field)) return field;
+	
+	let str = String(field).trim();
+	
+	// Handle CSV export artifacts like ="[...]"
+	if (str.startsWith('="') && str.endsWith('"')) {
+		str = str.slice(2, -1);
+	} else if (str.startsWith('=') && str.startsWith('[', 1) && str.endsWith(']')) {
+		str = str.slice(1);
+	}
+	
+	// Try to parse as JSON array
+	if (str.startsWith('[') && str.endsWith(']')) {
+		try {
+			return JSON.parse(str);
+		} catch {
+			// If JSON parse fails, return empty array
+			return [];
+		}
+	}
+	
+	// Return as single-item array if not parseable
+	return str ? [str] : [];
 }
 
 function loadSettings() {
@@ -105,6 +199,25 @@ function makeKey(last, first, dept) {
 	return `${ln}|${fi}|${dp}`;
 }
 
+function extractCourseCodeFromRow(row) {
+	if (!row) return null;
+	
+	// Look for course codes in various cells within the row
+	const cells = row.querySelectorAll('td, th, span, div');
+	
+	for (const cell of cells) {
+		const text = (cell.textContent || '').trim();
+		
+		// Match patterns like "PSTAT 596", "ME 197", "ITAL 1", "CHEM 109A"
+		const courseMatch = text.match(/\b([A-Z]{2,6})\s*(\d{1,3}[A-Z]?)\b/);
+		if (courseMatch) {
+			return `${courseMatch[1]} ${courseMatch[2]}`;
+		}
+	}
+	
+	return null;
+}
+
 function observeAndRender() {
 	const observer = new MutationObserver(() => scheduleScan());
 	observer.observe(document, { childList: true, subtree: true });
@@ -119,7 +232,12 @@ function observeAndRender() {
 		const nodes = findInstructorNodes();
 		console.log('[RateMyGaucho] instructor candidates:', nodes.length);
 		if (!nodes.length) return;
-		const lookup = await ensureRatingsLoaded();
+		
+		// Load both datasets in parallel
+		const [lookup, courseLookup] = await Promise.all([
+			ensureRatingsLoaded(),
+			ensureCourseDataLoaded()
+		]);
 		if (!lookup) return;
 		const sample = nodes.slice(0, 5).map(n => (n.textContent||'').trim().replace(/\s+/g,' '));
 		console.log('[RateMyGaucho] sample candidate texts:', sample);
@@ -141,11 +259,20 @@ function observeAndRender() {
 				console.log('[RateMyGaucho] Keys for', name, ':', keys.slice(0, 5)); // Show first 5 keys
 			}
 			
+			// Extract course code from the same row
+			const row = node.closest('tr, .row, .resultsRow, .SSR_CLSRSLT_WRK, .sectionRow, .CourseRow');
+			const courseCode = extractCourseCodeFromRow(row);
+			const courseRec = courseLookup && courseCode ? courseLookup.get(normalizeCourseCode(courseCode)) : null;
+			
+			if (courseCode && courseRec) {
+				console.log('[RateMyGaucho] Course matched:', courseCode, '->', courseRec.courseName);
+			}
+			
 			const match = matchInstructor(info, lookup);
 			if (match) {
 				matchedCount++;
 				console.log('[RateMyGaucho] MATCHED:', info.raw, '->', match.firstName, match.lastName, match.rmpScore);
-				renderCard(node, match);
+				renderCard(node, match, courseRec);
 			} else {
 				console.log('[RateMyGaucho] NO MATCH for:', info.raw);
 			}
@@ -378,7 +505,7 @@ function matchInstructor(info, lookup) {
 	return best;
 }
 
-function renderCard(anchorNode, record) {
+function renderCard(anchorNode, record, courseRec = null) {
 	const card = document.createElement('div');
 	const rating = Number(record.rmpScore || 0);
 	card.className = 'rmg-card ' + (rating >= 4 ? 'rmg-good' : rating >= 3 ? 'rmg-ok' : 'rmg-bad');
@@ -449,6 +576,14 @@ function renderCard(anchorNode, record) {
 	const bar = document.createElement('span');
 	meter.appendChild(bar);
 
+	// Course metadata section
+	if (courseRec) {
+		const courseMeta = renderCourseMeta(courseRec);
+		if (courseMeta) {
+			card.appendChild(courseMeta);
+		}
+	}
+
 	const actions = document.createElement('div');
 	actions.className = 'rmg-actions';
 
@@ -486,4 +621,73 @@ function renderCard(anchorNode, record) {
 		const pct = Math.max(0, Math.min(100, (rating / 5) * 100));
 		bar.style.width = pct + '%';
 	});
+}
+
+function renderCourseMeta(courseRec) {
+	const courseMeta = document.createElement('div');
+	courseMeta.className = 'rmg-course';
+
+	// Grading Basis chip
+	if (courseRec.gradingBasis) {
+		const chip = document.createElement('span');
+		chip.className = 'rmg-chip';
+		chip.textContent = courseRec.gradingBasis;
+		courseMeta.appendChild(chip);
+	}
+
+	// Enrollment Trend Sparkline
+	if (courseRec.enrollmentTrend && courseRec.enrollmentTrend.length > 1) {
+		const enrollSpark = document.createElement('div');
+		enrollSpark.className = 'rmg-spark rmg-spark--enroll';
+		enrollSpark.setAttribute('aria-label', `Enrollment trend: ${courseRec.enrollmentTrend.join(', ')}`);
+		
+		const maxVal = Math.max(...courseRec.enrollmentTrend.filter(v => typeof v === 'number' && !isNaN(v)));
+		if (maxVal > 0) {
+			courseRec.enrollmentTrend.forEach(val => {
+				if (typeof val === 'number' && !isNaN(val)) {
+					const bar = document.createElement('span');
+					bar.style.height = `${Math.max(2, (val / maxVal) * 16)}px`;
+					bar.title = `Enrollment: ${val}`;
+					enrollSpark.appendChild(bar);
+				}
+			});
+			courseMeta.appendChild(enrollSpark);
+		}
+	}
+
+	// Grading Trend
+	if (courseRec.gradingTrend && courseRec.gradingTrend.length > 0) {
+		const gradeSpark = document.createElement('div');
+		gradeSpark.className = 'rmg-spark rmg-spark--grade';
+		gradeSpark.setAttribute('aria-label', `Grading trend: ${courseRec.gradingTrend.join(' ')}`);
+		
+		courseRec.gradingTrend.slice(0, 8).forEach(grade => {
+			if (typeof grade === 'string' && grade.trim()) {
+				const tick = document.createElement('span');
+				tick.title = `Grade: ${grade}`;
+				tick.textContent = grade.charAt(0);
+				gradeSpark.appendChild(tick);
+			}
+		});
+		
+		if (gradeSpark.children.length > 0) {
+			courseMeta.appendChild(gradeSpark);
+		}
+	}
+
+	// Recent Review snippet
+	if (courseRec.recentReviews && courseRec.recentReviews.length > 0) {
+		const firstReview = courseRec.recentReviews[0];
+		if (typeof firstReview === 'string' && firstReview.trim()) {
+			const quote = document.createElement('div');
+			quote.className = 'rmg-quote';
+			// Truncate to ~120 chars with ellipsis
+			const reviewText = firstReview.length > 120 ? 
+				firstReview.slice(0, 120) + '…' : firstReview;
+			quote.textContent = `"${reviewText}"`;
+			courseMeta.appendChild(quote);
+		}
+	}
+
+	return courseMeta.children.length > 0 ? courseMeta : null;
 }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RateMyGaucho",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "description": "Show professor ratings and UCSB Plat links on UCSB GOLD course pages.",
   "icons": {
     "16": "gaucho.png",
@@ -12,7 +12,7 @@
     {
       "matches": ["https://my.sa.ucsb.edu/*"],
       "exclude_matches": ["https://my.sa.ucsb.edu/gold/Logout.aspx*"],
-      "js": ["content/content.js"],
+      "js": ["content/papaparse.min.js", "content/content.js"],
       "css": ["content/styles.css"],
       "run_at": "document_idle",
       "all_frames": true
@@ -20,7 +20,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["scores.csv", "gaucho.png"],
+      "resources": ["scores.csv", "gaucho.png", "ucsb_courses_final_corrected.csv"],
       "matches": ["https://my.sa.ucsb.edu/*"]
     }
   ],
