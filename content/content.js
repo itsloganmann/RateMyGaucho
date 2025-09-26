@@ -299,56 +299,100 @@ function makeKey(last, first, dept) {
 function extractCourseCodeFromRow(row) {
 	if (!row) return null;
 	
-	// Look for course codes in the row and nearby elements
-	const searchElements = [
-		// Current row elements
-		...row.querySelectorAll('td, th, span, div, a'),
-		// Previous rows (course titles are often in header rows)
-		...Array.from(row.parentElement?.querySelectorAll('tr') || [])
-			.filter(r => r.rowIndex < row.rowIndex)
-			.slice(-3) // Last 3 previous rows
-			.flatMap(r => Array.from(r.querySelectorAll('td, th, span, div, a, strong, b')))
-	];
-	
+	// Strategy 1: Look for course section headers ABOVE the current instructor row
+	// UCSB GOLD typically has course headers separate from instructor detail rows
 	let bestMatch = null;
-	let debugInfo = [];
 	
-	for (const element of searchElements) {
-		const text = (element.textContent || '').trim();
-		if (!text || text.length > 100) continue; // Skip very long text
+	// Find the container (table or section) that holds this row
+	const container = row.closest('table, .course-section, .results-section') || row.parentElement;
+	
+	if (container) {
+		// Get all elements in the container that might contain course headers
+		const allElements = Array.from(container.querySelectorAll('*'));
+		const rowIndex = allElements.indexOf(row);
 		
-		debugInfo.push(text);
-		
-		// Multiple patterns for different course code formats
-		let courseMatch = null;
-		
-		// Pattern 1: "ANTH 3 - INTRO ARCH" (with dash and title)
-		courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\s*(?:-|–)/);
-		if (courseMatch) {
-			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
-			console.log('[RateMyGaucho] Course code pattern 1:', bestMatch, 'from:', text);
-			break;
-		}
-		
-		// Pattern 2: Just "ANTH 3" or similar
-		courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)$/);
-		if (courseMatch) {
-			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
-			console.log('[RateMyGaucho] Course code pattern 2:', bestMatch, 'from:', text);
-			break;
-		}
-		
-		// Pattern 3: Within longer text
-		courseMatch = text.match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\b/);
-		if (courseMatch && !bestMatch) {
-			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
-			console.log('[RateMyGaucho] Course code pattern 3:', bestMatch, 'from:', text);
+		// Search backwards from current row to find course headers
+		// Look up to 20 elements back to find the course title
+		for (let i = Math.max(0, rowIndex - 20); i < rowIndex; i++) {
+			const element = allElements[i];
+			const text = (element.textContent || '').trim();
+			
+			// Skip very short or very long text, and common non-course elements
+			if (!text || text.length < 5 || text.length > 150) continue;
+			if (/^(Days|Time|Location|Instructor|Space|Max|Add|Save|Cancel)$/i.test(text)) continue;
+			
+			// Look for course patterns in potential header text
+			let courseMatch = null;
+			
+			// Pattern 1: "ANTH 3 - INTRO ARCH" (most common GOLD format)
+			courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\s*[-–]\s*(.+)/);
+			if (courseMatch) {
+				bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
+				console.log('[RateMyGaucho] Found course header pattern 1:', bestMatch, 'from:', text.slice(0, 50));
+				break;
+			}
+			
+			// Pattern 2: Just "ANTH 3" at start of text
+			courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)(?:\s|$)/);
+			if (courseMatch) {
+				bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
+				console.log('[RateMyGaucho] Found course header pattern 2:', bestMatch, 'from:', text.slice(0, 50));
+				break;
+			}
+			
+			// Pattern 3: Course code within text (more permissive)
+			courseMatch = text.match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\b/);
+			if (courseMatch && !bestMatch && !/Location|Building|Hall|Room/.test(text)) {
+				bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
+				console.log('[RateMyGaucho] Found course header pattern 3:', bestMatch, 'from:', text.slice(0, 50));
+			}
 		}
 	}
 	
-	// Debug: show what text we examined if no match found
-	if (!bestMatch && debugInfo.length > 0) {
-		console.log('[RateMyGaucho] Course code search failed. Examined texts:', debugInfo.slice(0, 5));
+	// Strategy 2: If no header found, try DOM traversal upward
+	if (!bestMatch) {
+		let currentElement = row.parentElement;
+		let depth = 0;
+		
+		while (currentElement && depth < 5) {
+			// Look for elements with course-like content near this row
+			const siblings = Array.from(currentElement.children);
+			const rowPosition = siblings.indexOf(row.closest('tr, div, section')) || 0;
+			
+			// Check previous siblings for course headers
+			for (let i = Math.max(0, rowPosition - 3); i < rowPosition; i++) {
+				const sibling = siblings[i];
+				if (!sibling) continue;
+				
+				const text = (sibling.textContent || '').trim();
+				if (text.length < 5 || text.length > 100) continue;
+				
+				const courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)(?:\s*[-–]|\s|$)/);
+				if (courseMatch) {
+					bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
+					console.log('[RateMyGaucho] Found course via DOM traversal:', bestMatch, 'from:', text.slice(0, 50));
+					break;
+				}
+			}
+			
+			if (bestMatch) break;
+			currentElement = currentElement.parentElement;
+			depth++;
+		}
+	}
+	
+	// Debug: if still no match, show what we're dealing with
+	if (!bestMatch) {
+		const contextElements = [];
+		let current = row.parentElement;
+		for (let i = 0; i < 3 && current; i++) {
+			const text = (current.textContent || '').trim();
+			if (text && text.length < 200) {
+				contextElements.push(text.slice(0, 80));
+			}
+			current = current.parentElement;
+		}
+		console.log('[RateMyGaucho] Course code search failed. Context:', contextElements.slice(0, 2));
 	}
 	
 	return bestMatch;
