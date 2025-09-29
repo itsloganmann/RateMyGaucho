@@ -19,10 +19,12 @@ RateMyGaucho enhances UCSB GOLD by showing professor ratings inline on course re
 - **Debug Logging**: Console logs for troubleshooting matching issues
 
 ### Data Integration
-- **Single CSV Source**: Uses `scores.csv` for both ratings and UCSB Plat profile links
-- **Local Data Processing**: Fast, privacy-preserving local CSV lookup (no network requests)
-- **UCSB Plat Integration**: Direct links to professor profiles and curriculum pages
-- **Real-time Updates**: Automatically detects and processes new course listings
+- **Multiple CSV Sources**: Uses `scores.csv` for professor ratings, `ucsb_courses_final_corrected.csv` for course data, and `data/ucsb_professors_rmp.csv` as another source of professor ratings.
+- **Offline & Private**: Fast, privacy-preserving local CSV lookup (no network requests). The extension works completely offline.
+- **Course Data**: Displays course-specific information like grading basis, grading trends, and enrollment trends.
+- **Review Filtering**: Intelligently filters and displays recent reviews relevant to the specific instructor.
+- **UCSB Plat Integration**: Direct links to professor profiles and curriculum pages.
+- **Real-time Updates**: Automatically detects and processes new course listings.
 
 ### User Interface
 - **UCSB-Themed Design**: Clean, modern cards with UCSB color scheme
@@ -76,11 +78,14 @@ The archive will be created at `dist/RateMyGaucho.zip`, excluding development fi
 
 ```
 RateMyGaucho/
-├── manifest.json              # MV3 extension manifest
+├── manifest.json              # MV3 extension manifest (v1.0.5)
 ├── content/
 │   ├── content.js            # Main content script with matching logic
 │   └── styles.css            # Card styling and star animations
 ├── scores.csv                # Professor ratings and UCSB Plat links
+├── ucsb_courses_final_corrected.csv # Course-specific data
+├── data/
+│   └── ucsb_professors_rmp.csv # Additional professor ratings
 ├── gaucho.png                # Gaucho image for star ratings
 ├── icons/                    # Extension icons (16px, 48px, 128px)
 ├── scripts/                  # Build and packaging scripts
@@ -96,6 +101,8 @@ The `scores.csv` file contains professor data with the following columns:
 - `rmp_score`: Rate My Professor score (0.0-5.0)
 - `num_reviews`: Number of reviews
 - `profile_url`: UCSB Plat profile URL
+
+The `ucsb_courses_final_corrected.csv` file contains course-specific data.
 
 ## Star Rating System
 
