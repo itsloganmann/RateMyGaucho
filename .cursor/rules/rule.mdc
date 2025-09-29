@@ -1,0 +1,196 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# Cursor Project Rules for RateMyGaucho Chrome Extension
+
+These project-specific rules supplement the universal Cursor guidelines for the RateMyGaucho Chrome extension development, focusing on browser extension best practices, UCSB GOLD integration, and educational data handling.
+
+## Project Architecture & Structure
+
+### File Organization Standards
+- Maintain the established directory structure: `content/`, `icons/`, `scripts/`, with root-level manifest and data files[1]
+- Keep all content scripts in the `content/` directory with clear separation: `content.js` for logic, `styles.css` for styling, and third-party libraries like `papaparse.min.js`[1]
+- Store data files (`scores.csv`, `ucsb_courses_final_corrected.csv`) in the root directory for easy manifest access[1]
+- Place build and packaging scripts in the dedicated `scripts/` directory with platform-specific implementations[1]
+- Organize extension icons by size (16px, 48px, 128px) in the `icons/` directory following Chrome Web Store requirements[1]
+
+### Chrome Extension Development
+- Always maintain Manifest V3 compliance; never suggest reverting to V2 patterns or APIs[1]
+- Use content scripts exclusively for DOM manipulation and page interaction; avoid background scripts unless absolutely necessary[1]
+- Implement proper CSP (Content Security Policy) compliance for all inline styles and scripts[1]
+- Follow Chrome extension security best practices: no eval(), no inline event handlers, no remote code execution[1]
+- Test extension functionality across different Chrome versions and ensure compatibility with Chrome Web Store policies[1]
+
+### UCSB GOLD Integration
+- Target specific DOM elements on UCSB GOLD course search pages without breaking existing functionality[1]
+- Implement robust error handling for changes in UCSB GOLD page structure or layout modifications[1]
+- Use mutation observers or event listeners to detect dynamic content loading on GOLD pages[1]
+- Ensure the extension gracefully handles different course listing formats and layouts[1]
+- Maintain compatibility with UCSB GOLD's responsive design across desktop and mobile viewports[1]
+
+## Code Quality & Standards
+
+### JavaScript Development
+- Use modern ES6+ syntax with proper browser compatibility for Chrome extension environment[1]
+- Implement comprehensive error handling for CSV parsing, DOM manipulation, and data processing operations[1]
+- Use consistent naming conventions: camelCase for variables/functions, PascalCase for classes, UPPER_CASE for constants[1]
+- Maintain the existing debug logging system with console.log for development and optional production debugging[1]
+- Follow the established pattern of modular functions: name matching, data processing, DOM manipulation, and UI creation[1]
+
+### CSS Styling Standards
+- Maintain the UCSB color scheme and visual identity in all custom styling[1]
+- Use the established card-based design pattern for rating displays and course information[1]
+- Implement responsive design principles to ensure compatibility across different screen sizes[1]
+- Use CSS custom properties (variables) for consistent theming and easy maintenance[1]
+- Follow BEM methodology for CSS class naming to avoid conflicts with UCSB GOLD styles[1]
+
+### Data Processing Requirements
+- Always validate CSV data integrity before processing; handle malformed or missing data gracefully[1]
+- Implement efficient name matching algorithms that handle multiple professor name formats (LAST F, First Last, etc.)[1]
+- Use PapaParse library for all CSV operations; avoid custom parsing implementations[1]
+- Cache processed data in memory to avoid repeated CSV parsing operations[1]
+- Implement fuzzy matching for professor names to handle variations in formatting and spacing[1]
+
+## Security & Privacy
+
+### Data Protection
+- Never transmit professor rating data or student information to external servers; maintain local-only processing[1]
+- Implement proper data sanitization for all user-facing content to prevent XSS attacks[1]
+- Use HTTPS-only URLs for all external links (UCSB Plat, Rate My Professor)[1]
+- Validate all CSV data inputs to prevent injection attacks through malformed data files[1]
+- Implement proper error messages that don't expose sensitive system information or data structures[1]
+
+### Chrome Extension Security
+- Follow principle of least privilege: request only necessary permissions in manifest.json[1]
+- Use content_scripts with specific host permissions rather than broad activeTab permissions where possible[1]
+- Implement proper CSP headers to prevent code injection and maintain security standards[1]
+- Validate all external resources and avoid loading remote scripts or stylesheets[1]
+- Regular security audits of third-party dependencies like PapaParse[1]
+
+### Educational Data Ethics
+- Respect student privacy by not collecting, storing, or transmitting personal information[1]
+- Use publicly available rating data responsibly and maintain data accuracy[1]
+- Implement clear data source attribution for professor ratings and course information[1]
+- Ensure compliance with FERPA and other educational privacy regulations[1]
+- Provide transparent information about data sources and processing methods[1]
+
+## Feature Development
+
+### Star Rating System
+- Maintain the custom gaucho.png star system with precise tenths-based partial fills[1]
+- Use the established 32px star size for optimal readability and visual impact[1]
+- Implement high contrast between filled (bright/vibrant) and empty (dark/muted) star portions[1]
+- Test star rendering across different display densities and browser zoom levels[1]
+- Ensure star ratings are accessible with proper ARIA labels and screen reader support[1]
+
+### Professor Matching Algorithm
+- Enhance the flexible matching system to handle new name format variations as they arise[1]
+- Maintain comprehensive debug logging for matching attempts and failures[1]
+- Implement fallback matching strategies for edge cases and unusual name formats[1]
+- Use consistent key generation for professor lookups to ensure reliable matching[1]
+- Test matching algorithm with diverse name datasets and international character sets[1]
+
+### UI Component Development
+- Follow the established card-based design pattern for all new UI components[1]
+- Maintain responsive layout that adapts to different screen sizes and content lengths[1]
+- Use consistent spacing, typography, and color schemes across all interface elements[1]
+- Implement smooth animations and transitions that enhance user experience without being distracting[1]
+- Ensure all UI components integrate seamlessly with existing UCSB GOLD page layouts[1]
+
+## Testing & Quality Assurance
+
+### Browser Testing
+- Test extension functionality across different Chrome versions and operating systems[1]
+- Verify compatibility with Chrome's latest security updates and policy changes[1]
+- Test extension performance with large datasets and multiple course listings[1]
+- Validate extension behavior with slow network connections and offline scenarios[1]
+- Ensure proper functionality across different display resolutions and browser window sizes[1]
+
+### UCSB GOLD Integration Testing
+- Regularly test against live UCSB GOLD pages to detect layout or structure changes[1]
+- Verify extension functionality across different academic quarters and course catalog updates[1]
+- Test with various course search filters and result page formats[1]
+- Validate professor name extraction across different department and course types[1]
+- Ensure extension doesn't interfere with GOLD's native functionality or user workflows[1]
+
+### Data Validation Testing
+- Implement automated tests for CSV parsing and data integrity validation[1]
+- Test name matching algorithms with edge cases and unusual professor name formats[1]
+- Validate star rating calculations and visual rendering accuracy[1]
+- Test course metadata extraction and display across different course types[1]
+- Verify UCSB Plat link generation and accessibility[1]
+
+## Build & Deployment
+
+### Distribution Packaging
+- Use the established build scripts (`package.ps1` for Windows, `package.sh` for macOS/Linux) for creating distribution packages[1]
+- Maintain the `dist/RateMyGaucho.zip` output format for consistent distribution[1]
+- Exclude development files (`.git`, `node_modules`, `.vscode`, etc.) from distribution packages[1]
+- Validate manifest.json and all required files are included in distribution packages[1]
+- Test installation and functionality of packaged extension before release[1]
+
+### Version Management
+- Follow semantic versioning (MAJOR.MINOR.PATCH) for extension releases[1]
+- Update manifest.json version number with each release[1]
+- Maintain changelog with clear descriptions of new features, bug fixes, and breaking changes[1]
+- Tag releases in Git with corresponding version numbers[1]
+- Document migration steps for users when updating between major versions[1]
+
+### Release Process
+- Create comprehensive release notes that highlight new features and important changes[1]
+- Include demo videos or screenshots for significant UI changes[1]
+- Test extension installation from ZIP file before public release[1]
+- Verify all external links (UCSB Plat, demo videos) are accessible and functional[1]
+- Update README.md with any new installation or usage instructions[1]
+
+## Performance Optimization
+
+### DOM Manipulation Efficiency
+- Minimize DOM queries by caching element references and using efficient selectors[1]
+- Batch DOM modifications to reduce browser reflow and repaint operations[1]
+- Use document fragments for complex DOM insertions to improve performance[1]
+- Implement debouncing for dynamic content detection to avoid excessive processing[1]
+- Profile extension performance impact on UCSB GOLD page load times[1]
+
+### Memory Management
+- Clear cached data appropriately to prevent memory leaks during extended browsing sessions[1]
+- Use weak references where appropriate to allow garbage collection of DOM elements[1]
+- Monitor memory usage with large CSV datasets and optimize data structures accordingly[1]
+- Implement lazy loading for course metadata that isn't immediately visible[1]
+- Clean up event listeners and observers when navigating away from GOLD pages[1]
+
+### Data Processing Optimization
+- Cache processed CSV data to avoid repeated parsing operations[1]
+- Implement efficient search algorithms for professor and course lookups[1]
+- Use indexed data structures for fast name matching and course code lookup[1]
+- Optimize image loading and caching for gaucho star ratings[1]
+- Profile CSV parsing performance and optimize for large datasets[1]
+
+## Maintenance & Updates
+
+### Data Maintenance
+- Establish procedures for updating professor rating data and course metadata[1]
+- Implement data validation scripts to ensure CSV integrity and format consistency[1]
+- Monitor for changes in UCSB Plat URLs and update links accordingly[1]
+- Track and update department codes and course numbering changes[1]
+- Maintain data source documentation and update procedures[1]
+
+### Code Maintenance
+- Regular dependency updates for PapaParse and other third-party libraries[1]
+- Monitor Chrome extension API changes and deprecated features[1]
+- Refactor code to improve maintainability while preserving functionality[1]
+- Update documentation to reflect code changes and new features[1]
+- Implement automated testing where possible to catch regressions[1]
+
+### Monitoring & Analytics
+- Implement error tracking to identify common issues and edge cases[1]
+- Monitor extension performance metrics and user feedback[1]
+- Track feature usage to guide development priorities[1]
+- Document common user issues and troubleshooting procedures[1]
+- Maintain communication channels for user feedback and bug reports[1]
+
+These project-specific rules ensure that development work on RateMyGaucho maintains the extension's quality, performance, and user experience while following Chrome extension best practices and educational data handling standards.
+
+[1](https://github.com/itsloganmann/RateMyGaucho)

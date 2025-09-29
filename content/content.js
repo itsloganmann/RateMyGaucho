@@ -1,63 +1,58 @@
-(function debugBanner(){ try { console.log('[RateMyGaucho] content v1.1.0 at', location.href); } catch(_){} })();
+(function debugBanner(){ try { console.log('[RateMyGaucho] content v1.0.4 at', location.href); } catch(_){} })();
 
-// Check if Papa Parse is available immediately
-console.log('[RateMyGaucho] Papa Parse check:', typeof Papa !== 'undefined' ? 'Available' : 'NOT AVAILABLE');
-if (typeof Papa === 'undefined') {
-	console.error('[RateMyGaucho] CRITICAL: Papa Parse failed to load! Course metadata will not work.');
-}
-
-// Expose debugging functions to global scope for console testing
-window.rmgDebug = {
-	testCourseExtraction: function(instructorText) {
-		console.log(`🧪 Testing course extraction for instructor: "${instructorText}"`);
-		const nodes = findInstructorNodes();
-		const matchingNodes = nodes.filter(node => (node.textContent || '').includes(instructorText));
-		
-		if (matchingNodes.length === 0) {
-			console.log('❌ No matching instructor nodes found');
-			return;
-		}
-		
-		console.log(`✅ Found ${matchingNodes.length} matching nodes`);
-		matchingNodes.forEach((node, i) => {
-			console.log(`\n--- Node ${i + 1} ---`);
-			const row = node.closest('tr, .row, .resultsRow, .SSR_CLSRSLT_WRK, .sectionRow, .CourseRow');
-			const courseCode = extractCourseCodeFromRow(row);
-			console.log(`Course code result: ${courseCode || 'null'}`);
-		});
-	},
+// Debug function to test review filtering
+window.testReviewFiltering = async function() {
+	console.log('[RateMyGaucho] Testing review filtering...');
+	const courseLookup = await ensureCoursesLoaded();
+	const ratingsLookup = await ensureRatingsLoaded();
 	
-	testCourseLookup: function(courseCode) {
-		ensureCourseDataLoaded().then(lookup => {
-			const normalized = normalizeCourseCode(courseCode);
-			console.log(`🔍 Looking up course: "${courseCode}" -> "${normalized}"`);
+	if (!courseLookup || !ratingsLookup) {
+		console.error('[RateMyGaucho] Failed to load data for testing');
+		return;
+	}
+	
+	// Test with MATH 2A and known instructors
+	const testCourse = 'MATH 2A';
+	const courseRecords = courseLookup.get(testCourse);
+	
+	if (!courseRecords) {
+		console.log('[RateMyGaucho] No records found for', testCourse);
+		return;
+	}
+	
+	console.log(`[RateMyGaucho] Found ${courseRecords.length} records for ${testCourse}`);
+	
+	// Test with different instructors
+	const testInstructors = [
+		{ firstName: 'Matt', lastName: 'Porter' },
+		{ firstName: 'Raul', lastName: 'Rodriguez' },
+		{ firstName: 'Kelvin', lastName: 'Lam' }
+	];
+	
+	for (const instructor of testInstructors) {
+		console.log(`\n=== Testing ${instructor.firstName} ${instructor.lastName} ===`);
+		
+		const selectedData = pickCourseDataForInstructor(courseRecords, instructor);
+		if (selectedData) {
+			console.log('Selected course data:', selectedData.courseName);
+			console.log('Reviews filtered:', selectedData._reviewsFiltered);
+			console.log('Review count:', selectedData.recentReviews ? selectedData.recentReviews.length : 0);
 			
-			if (lookup && lookup.has(normalized)) {
-				const result = lookup.get(normalized);
-				console.log('✅ Found:', result);
-			} else {
-				console.log('❌ Not found in lookup');
-				if (lookup) {
-					const similar = Array.from(lookup.keys()).filter(k => k.includes(normalized.split(' ')[0])).slice(0, 5);
-					console.log('Similar courses:', similar);
-				}
+			if (selectedData.recentReviews && selectedData.recentReviews.length > 0) {
+				console.log('Sample reviews:');
+				selectedData.recentReviews.slice(0, 2).forEach((review, i) => {
+					console.log(`  ${i + 1}: "${review.substring(0, 100)}..."`);
+				});
 			}
-		});
-	},
-	
-	analyzeCurrentPage: function() {
-		analyzePageStructure();
-	},
-	
-	showAllCoursePatterns: function() {
-		const pageText = document.body.textContent || '';
-		const patterns = [...new Set(pageText.match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\s*[-–]?\s*[A-Z]/g) || [])];
-		console.log('All course patterns on page:', patterns.slice(0, 20));
-		return patterns;
+			
+			// Test gating logic
+			const wouldBeGated = !(selectedData._reviewsFiltered && selectedData.recentReviews && selectedData.recentReviews.length > 0);
+			console.log('Would be gated (skipped):', wouldBeGated);
+		} else {
+			console.log('No course data selected for this instructor');
+		}
 	}
 };
-
-console.log('🛠️  Debug functions available: rmgDebug.testCourseExtraction("INSTRUCTOR_NAME"), rmgDebug.testCourseLookup("ANTH 3"), rmgDebug.analyzeCurrentPage(), rmgDebug.showAllCoursePatterns()');
 
 // Message probe to verify content script presence from page console
 try {
@@ -79,10 +74,8 @@ try {
 
 let __rmg_lookup = null;
 let __rmg_loading = null;
-
-// Course data cache
-let __rmg_courseLookup = null;
-let __rmg_courseLoading = null;
+let __rmg_course_lookup = null;
+let __rmg_course_loading = null;
 
 async function ensureRatingsLoaded() {
 	if (__rmg_lookup) return __rmg_lookup;
@@ -105,185 +98,28 @@ async function ensureRatingsLoaded() {
 	return __rmg_loading;
 }
 
-// Simple CSV parser fallback for when Papa Parse fails
-function parseSimpleCsv(csvText) {
-	const lines = csvText.split(/\r?\n/).filter(Boolean);
-	if (!lines.length) return [];
-	
-	const headers = lines[0].split(',').map(h => h.trim());
-	const records = [];
-	
-	for (let i = 1; i < lines.length; i++) {
-		const line = lines[i];
-		if (!line.trim()) continue;
-		
-		// Simple parsing - won't handle all edge cases but should work for basic data
-		const values = [];
-		let current = '';
-		let inQuotes = false;
-		
-		for (let j = 0; j < line.length; j++) {
-			const char = line[j];
-			if (char === '"' && (j === 0 || line[j-1] !== '\\')) {
-				inQuotes = !inQuotes;
-			} else if (char === ',' && !inQuotes) {
-				values.push(current.trim());
-				current = '';
-			} else {
-				current += char;
-			}
-		}
-		values.push(current.trim());
-		
-		if (values.length >= headers.length) {
-			const record = {};
-			headers.forEach((header, idx) => {
-				record[header] = values[idx] || '';
-			});
-			records.push(record);
-		}
-	}
-	
-	return records;
-}
-
-async function ensureCourseDataLoaded() {
-	console.log('[RateMyGaucho] ensureCourseDataLoaded() called');
-	if (__rmg_courseLookup) {
-		console.log('[RateMyGaucho] Course lookup already cached, returning');
-		return __rmg_courseLookup;
-	}
-	if (__rmg_courseLoading) {
-		console.log('[RateMyGaucho] Course loading in progress, waiting...');
-		return __rmg_courseLoading;
-	}
-	
-	console.log('[RateMyGaucho] Starting new course data loading...');
-	__rmg_courseLoading = (async () => {
+async function ensureCoursesLoaded() {
+	if (__rmg_course_lookup) return __rmg_course_lookup;
+	if (__rmg_course_loading) return __rmg_course_loading;
+	__rmg_course_loading = (async () => {
 		try {
-			console.log('[RateMyGaucho] Starting course data load...');
 			const csvUrl = chrome.runtime.getURL('ucsb_courses_final_corrected.csv');
-			console.log('[RateMyGaucho] Fetching CSV from:', csvUrl);
-			
 			const res = await fetch(csvUrl);
-			if (!res.ok) {
-				console.log('[RateMyGaucho] Failed to fetch course CSV:', res.status);
-				return null;
-			}
-			
+			if (!res.ok) return null;
 			const csvText = await res.text();
-			console.log('[RateMyGaucho] Course CSV loaded, length:', csvText.length);
-			
-			let records;
-			
-			// Try Papa Parse first if available
-			if (typeof Papa !== 'undefined') {
-				console.log('[RateMyGaucho] Using Papa Parse for CSV parsing');
-				const results = Papa.parse(csvText, { 
-					header: true, 
-					skipEmptyLines: true,
-					transformHeader: (header) => header.trim()
-				});
-				
-				if (results.errors.length > 0) {
-					console.log('[RateMyGaucho] Papa Parse errors:', results.errors.slice(0, 3));
-				}
-				
-				records = results.data;
-			} else {
-				// Use fallback parser
-				console.log('[RateMyGaucho] Using fallback CSV parser');
-				records = parseSimpleCsv(csvText);
-			}
-			
-			console.log('[RateMyGaucho] Course records parsed:', records.length);
-			__rmg_courseLookup = buildCourseLookup(records);
-			console.log('[RateMyGaucho] Course lookup built, entries:', __rmg_courseLookup.size);
-			return __rmg_courseLookup;
+			const records = parseCourseCsv(csvText);
+			__rmg_course_lookup = buildCourseLookup(records);
+			// Store globally for extractCourseCode validation
+			window.__rmg_course_lookup = __rmg_course_lookup;
+			return __rmg_course_lookup;
 		} catch (_e) {
-			console.error('[RateMyGaucho] Failed to load course data:', _e);
+			console.error('[RateMyGaucho] Error loading course data:', _e);
 			return null;
 		} finally {
-			__rmg_courseLoading = null;
+			__rmg_course_loading = null;
 		}
 	})();
-	return __rmg_courseLoading;
-}
-
-function normalizeCourseCode(s) {
-	return (s || '')
-		.replace(/\s+/g, ' ')
-		.trim()
-		.toUpperCase();
-}
-
-function buildCourseLookup(records) {
-	const map = new Map();
-	let processed = 0, skipped = 0;
-	
-	for (const rec of records) {
-		if (!rec.course_name) {
-			skipped++;
-			continue;
-		}
-		try {
-			// Process the record fields
-			const processedRec = {
-				courseName: (rec.course_name || '').trim(),
-				courseUrl: (rec.course_url || '').trim(),
-				gradingBasis: (rec.grading_basis || '').trim(),
-				gradingTrend: parseArrayField(rec.grading_trend),
-				enrollmentTrend: parseArrayField(rec.enrollment_trend),
-				recentReviews: parseArrayField(rec.recent_reviews)
-			};
-			
-			const normalizedCode = normalizeCourseCode(processedRec.courseName);
-			if (normalizedCode) {
-				map.set(normalizedCode, processedRec);
-				processed++;
-				
-				// Log first few entries for debugging
-				if (processed <= 3) {
-					console.log('[RateMyGaucho] Course entry:', normalizedCode, '->', processedRec);
-				}
-			} else {
-				skipped++;
-			}
-		} catch (e) {
-			skipped++;
-			continue;
-		}
-	}
-	
-	console.log(`[RateMyGaucho] Course lookup: processed ${processed}, skipped ${skipped}`);
-	return map;
-}
-
-function parseArrayField(field) {
-	if (!field) return [];
-	if (Array.isArray(field)) return field;
-	
-	let str = String(field).trim();
-	
-	// Handle CSV export artifacts like ="[...]"
-	if (str.startsWith('="') && str.endsWith('"')) {
-		str = str.slice(2, -1);
-	} else if (str.startsWith('=') && str.startsWith('[', 1) && str.endsWith(']')) {
-		str = str.slice(1);
-	}
-	
-	// Try to parse as JSON array
-	if (str.startsWith('[') && str.endsWith(']')) {
-		try {
-			return JSON.parse(str);
-		} catch {
-			// If JSON parse fails, return empty array
-			return [];
-		}
-	}
-	
-	// Return as single-item array if not parseable
-	return str ? [str] : [];
+	return __rmg_course_loading;
 }
 
 function loadSettings() {
@@ -314,6 +150,153 @@ function parseCsv(csvText) {
 		out.push(rec);
 	}
 	return out;
+}
+
+function parseCourseCsv(csvText) {
+	try {
+		const parsed = Papa.parse(csvText, {
+			header: true,
+			skipEmptyLines: true,
+			transformHeader: (header) => header.trim()
+		});
+		
+		if (parsed.errors.length > 0) {
+			console.warn('[RateMyGaucho] CSV parsing warnings:', parsed.errors);
+		}
+		
+		const out = [];
+		for (const row of parsed.data) {
+			if (!row.course_name) continue;
+			
+			const rec = {
+				courseName: (row.course_name || '').trim(),
+				courseUrl: (row.course_url || '').trim(),
+				gradingBasis: (row.grading_basis || '').trim(),
+				gradingTrend: parseJsonArray(row.grading_trend),
+				enrollmentTrend: parseJsonArray(row.enrollment_trend),
+				recentReviews: parseJsonArray(row.recent_reviews)
+			};
+			
+			out.push(rec);
+		}
+		
+		console.log('[RateMyGaucho] Parsed', out.length, 'course records');
+		if (out.length > 0) {
+			console.log('[RateMyGaucho] Sample course records:', out.slice(0, 3));
+		}
+		return out;
+	} catch (e) {
+		console.error('[RateMyGaucho] Error parsing course CSV:', e);
+		return [];
+	}
+}
+
+function parseJsonArray(jsonString) {
+	if (!jsonString || jsonString.trim() === '') return [];
+	try {
+		const parsed = JSON.parse(jsonString);
+		return Array.isArray(parsed) ? parsed : [];
+	} catch (e) {
+		console.warn('[RateMyGaucho] Failed to parse JSON array:', jsonString, e);
+		return [];
+	}
+}
+
+function buildCourseLookup(records) {
+	const map = new Map();
+	for (const rec of records) {
+		const normalizedName = normalizeCourseCode(rec.courseName);
+		const list = map.get(normalizedName);
+		if (list) {
+			list.push(rec);
+		} else {
+			map.set(normalizedName, [rec]);
+		}
+	}
+	console.log('[RateMyGaucho] Built course lookup with', map.size, 'course keys');
+	return map;
+}
+
+function normalizeCourseCode(courseCode) {
+	return (courseCode || '').toUpperCase().replace(/\s+/g, ' ').trim();
+}
+
+function filterReviewsByInstructor(reviews, matchedInstructor) {
+	if (!Array.isArray(reviews) || !matchedInstructor) return [];
+	
+	const first = (matchedInstructor.firstName || '').toLowerCase().trim();
+	const last = (matchedInstructor.lastName || '').toLowerCase().trim();
+	
+	if (!last) return [];
+	
+	const filtered = [];
+	for (const review of reviews) {
+		const text = String(review || '').toLowerCase();
+		
+		// Use word boundaries to avoid false matches like "ang" in "change"
+		const lastRegex = new RegExp(`\\b${last.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+		
+		if (lastRegex.test(text)) {
+			// Additional boost if first name or common professor titles appear
+			if ((first && text.includes(first)) || 
+				text.includes(`prof ${last}`) || 
+				text.includes(`professor ${last}`) || 
+				text.includes(`dr ${last}`)) {
+				filtered.push(review);
+			} else {
+				filtered.push(review);
+			}
+		}
+	}
+	
+	return filtered;
+}
+
+function pickCourseDataForInstructor(courseRecords, matchedInstructor) {
+	if (!Array.isArray(courseRecords) || courseRecords.length === 0) return null;
+	if (!matchedInstructor) return courseRecords[0];
+
+	const first = (matchedInstructor.firstName || '').toLowerCase().trim();
+	const last = (matchedInstructor.lastName || '').toLowerCase().trim();
+	const firstInitial = first ? first[0] : '';
+
+	let bestRecord = courseRecords[0];
+	let bestScore = 0;
+	let bestFiltered = [];
+
+	for (const rec of courseRecords) {
+		// First, try to filter reviews by instructor
+		const filtered = filterReviewsByInstructor(rec.recentReviews, matchedInstructor);
+		
+		// Score based on filtered reviews (high weight) + general name mentions (lower weight)
+		let score = filtered.length * 10; // High weight for instructor-specific reviews
+		
+		// Add general scoring for fallback
+		const texts = Array.isArray(rec.recentReviews) ? rec.recentReviews : [];
+		for (const t of texts) {
+			const txt = String(t || '').toLowerCase();
+			if (last && txt.includes(last)) score += 3;
+			if (first && txt.includes(first)) score += 2;
+			if (firstInitial && txt.includes(`${firstInitial}.`)) score += 1;
+		}
+
+		if (score > bestScore) {
+			bestRecord = rec;
+			bestScore = score;
+			bestFiltered = filtered;
+		}
+	}
+
+	// Return a copy of the record with filtered reviews if any were found
+	const result = { ...bestRecord };
+	if (bestFiltered.length > 0) {
+		result.recentReviews = bestFiltered;
+		result._reviewsFiltered = true;
+	} else {
+		result._reviewsFiltered = false;
+	}
+
+	return result;
 }
 
 function buildLookup(records) {
@@ -349,273 +332,6 @@ function makeKey(last, first, dept) {
 	return `${ln}|${fi}|${dp}`;
 }
 
-function extractCourseCodeFromRow(row) {
-	console.log('\n🔍 === COURSE EXTRACTION DEBUG START ===');
-	
-	if (!row) {
-		console.log('❌ No row provided to extractCourseCodeFromRow');
-		return null;
-	}
-	
-	console.log('📍 Row element:', row.tagName, row.className, row.id);
-	console.log('📍 Row text content:', (row.textContent || '').trim().slice(0, 100));
-	
-	// Strategy 1: Look for course section headers ABOVE the current instructor row
-	let bestMatch = null;
-	let debugStats = {
-		containersChecked: 0,
-		elementsScanned: 0,
-		textPatternsFound: 0,
-		potentialCourses: []
-	};
-	
-	// Find the container (table or section) that holds this row
-	const container = row.closest('table, .course-section, .results-section') || row.parentElement;
-	
-	if (!container) {
-		console.log('❌ No container found for row');
-		return null;
-	}
-	
-	console.log('📦 Container found:', container.tagName, container.className, container.id);
-	debugStats.containersChecked++;
-	
-	// Get all elements in the container that might contain course headers
-	const allElements = Array.from(container.querySelectorAll('*'));
-	const rowIndex = allElements.indexOf(row);
-	
-	console.log('📊 Container stats:');
-	console.log('   - Total elements:', allElements.length);
-	console.log('   - Current row index:', rowIndex);
-	console.log('   - Will search elements:', Math.max(0, rowIndex - 30), 'to', rowIndex);
-	
-	// Search backwards from current row to find course headers (increased from 20 to 30)
-	for (let i = Math.max(0, rowIndex - 30); i < rowIndex; i++) {
-		const element = allElements[i];
-		const text = (element.textContent || '').trim();
-		debugStats.elementsScanned++;
-		
-		// Skip very short or very long text
-		if (!text || text.length < 4 || text.length > 200) continue;
-		
-		// Skip common non-course elements
-		if (/^(Days?|Times?|Locations?|Instructors?|Space|Max|Add|Save|Cancel|View|Cart|Info|Final)$/i.test(text)) continue;
-		if (/^\d+$/.test(text)) continue; // Skip pure numbers
-		if (/^[MTWRFSU\s\n-]+$/.test(text)) continue; // Skip day patterns like "MWF"
-		
-		console.log(`🔎 Element ${i}/${rowIndex}: "${text.slice(0, 60)}"${text.length > 60 ? '...' : ''}`);
-		console.log(`   └─ Tag: ${element.tagName}, Classes: "${element.className}", ID: "${element.id}"`);
-		
-		// Look for course patterns in potential header text
-		let courseMatch = null;
-		
-		// Pattern 1: "ANTH      3   - INTRO ARCH" (UCSB GOLD format with extra spaces)
-		courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\s*[-–]\s*(.+)/);
-		if (courseMatch) {
-			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
-			debugStats.textPatternsFound++;
-			debugStats.potentialCourses.push({pattern: 1, code: bestMatch, text: text.slice(0, 100)});
-			console.log('✅ PATTERN 1 MATCH:', bestMatch, 'from:', text.slice(0, 80));
-			break;
-		}
-		
-		// Pattern 2: Handle UCSB GOLD spaced format "ANTH      3   -"
-		courseMatch = text.match(/^([A-Z]{2,6})\s{2,}(\d{1,3}[A-Z]?)\s*[-–]/);
-		if (courseMatch) {
-			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
-			debugStats.textPatternsFound++;
-			debugStats.potentialCourses.push({pattern: 2, code: bestMatch, text: text.slice(0, 100)});
-			console.log('✅ PATTERN 2 MATCH (spaced):', bestMatch, 'from:', text.slice(0, 80));
-			break;
-		}
-		
-		// Pattern 3: Just "ANTH 3" at start of text
-		courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)(?:\s|$)/);
-		if (courseMatch) {
-			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
-			debugStats.textPatternsFound++;
-			debugStats.potentialCourses.push({pattern: 3, code: bestMatch, text: text.slice(0, 100)});
-			console.log('✅ PATTERN 3 MATCH:', bestMatch, 'from:', text.slice(0, 80));
-			break;
-		}
-		
-		// Pattern 4: Course code within text (more permissive)
-		courseMatch = text.match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\b/);
-		if (courseMatch && !bestMatch && !/Location|Building|Hall|Room|Street|Ave|Blvd/i.test(text)) {
-			bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
-			debugStats.textPatternsFound++;
-			debugStats.potentialCourses.push({pattern: 4, code: bestMatch, text: text.slice(0, 100)});
-			console.log('✅ PATTERN 4 MATCH:', bestMatch, 'from:', text.slice(0, 80));
-		}
-		
-		// Store potential matches for debugging
-		if (courseMatch && !debugStats.potentialCourses.some(p => p.code === `${courseMatch[1]} ${courseMatch[2]}`)) {
-			debugStats.potentialCourses.push({
-				pattern: 'candidate', 
-				code: `${courseMatch[1]} ${courseMatch[2]}`, 
-				text: text.slice(0, 100),
-				rejected: /Location|Building|Hall|Room|Street|Ave|Blvd/i.test(text) ? 'location-pattern' : 'not-best-match'
-			});
-		}
-	}
-	
-	// Strategy 2: If no header found, try DOM traversal upward
-	if (!bestMatch) {
-		console.log('🔄 Strategy 1 failed, trying DOM traversal upward...');
-		
-		let currentElement = row.parentElement;
-		let depth = 0;
-		
-		while (currentElement && depth < 8) {
-			console.log(`   🔼 Depth ${depth}: ${currentElement.tagName}.${currentElement.className}`);
-			
-			// Look for elements with course-like content near this row
-			const siblings = Array.from(currentElement.children);
-			const rowPosition = siblings.indexOf(row.closest('tr, div, section')) || 0;
-			
-			console.log(`      Siblings: ${siblings.length}, Row position: ${rowPosition}`);
-			
-			// Check previous siblings for course headers  
-			for (let i = Math.max(0, rowPosition - 5); i < rowPosition; i++) {
-				const sibling = siblings[i];
-				if (!sibling) continue;
-				
-				const text = (sibling.textContent || '').trim();
-				if (text.length < 4 || text.length > 150) continue;
-				
-				console.log(`      🔎 Sibling ${i}: "${text.slice(0, 60)}"${text.length > 60 ? '...' : ''}`);
-				
-				const courseMatch = text.match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)(?:\s*[-–]|\s|$)/);
-				if (courseMatch) {
-					bestMatch = `${courseMatch[1]} ${courseMatch[2]}`;
-					debugStats.textPatternsFound++;
-					console.log('✅ DOM TRAVERSAL MATCH:', bestMatch, 'from:', text.slice(0, 80));
-					break;
-				}
-			}
-			
-			if (bestMatch) break;
-			currentElement = currentElement.parentElement;
-			depth++;
-		}
-	}
-	
-	// Strategy 3: Look for course patterns in page structure
-	if (!bestMatch) {
-		console.log('🔄 DOM traversal failed, analyzing page structure...');
-		
-		// Look for common UCSB GOLD course header patterns
-		const pageText = document.body.textContent || '';
-		const courseMatches = pageText.match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\s*[-–]\s*[A-Z]/g);
-		
-		if (courseMatches && courseMatches.length > 0) {
-			console.log('📋 Course patterns found on page:', courseMatches.slice(0, 10));
-			
-			// Try to correlate with instructor position
-			const instructorText = (row.textContent || '').trim();
-			console.log('👤 Instructor context:', instructorText);
-			
-			// Simple heuristic: use first course pattern found (could be improved)
-			const firstCourse = courseMatches[0].match(/^([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)/);
-			if (firstCourse) {
-				bestMatch = `${firstCourse[1]} ${firstCourse[2]}`;
-				console.log('⚠️  Using heuristic match:', bestMatch);
-			}
-		}
-	}
-	
-	// Final debugging output
-	console.log('📈 Debug Statistics:', debugStats);
-	console.log('🎯 Final result:', bestMatch || 'NO MATCH');
-	
-	if (!bestMatch) {
-		console.log('❌ EXTRACTION FAILED - Detailed Context:');
-		
-		// Show the DOM hierarchy around this row
-		let current = row;
-		for (let i = 0; i < 5 && current; i++) {
-			const text = (current.textContent || '').trim();
-			console.log(`   ${i === 0 ? '🎯' : '⬆️'} ${current.tagName}.${current.className}: "${text.slice(0, 100)}"${text.length > 100 ? '...' : ''}`);
-			current = current.parentElement;
-		}
-		
-		// Show potential courses we found but rejected
-		if (debugStats.potentialCourses.length > 0) {
-			console.log('🤔 Potential courses found but not selected:');
-			debugStats.potentialCourses.forEach((course, i) => {
-				console.log(`   ${i + 1}. Pattern ${course.pattern}: "${course.code}" from "${course.text}"${course.rejected ? ` (rejected: ${course.rejected})` : ''}`);
-			});
-		}
-	} else {
-		console.log('✅ SUCCESS: Course code extracted:', bestMatch);
-	}
-	
-	console.log('🔍 === COURSE EXTRACTION DEBUG END ===\n');
-	return bestMatch;
-}
-
-function analyzePageStructure() {
-	console.log('\n📋 === PAGE STRUCTURE ANALYSIS ===');
-	
-	const pageInfo = {
-		title: document.title,
-		url: window.location.href,
-		domain: window.location.hostname,
-		pathname: window.location.pathname
-	};
-	
-	console.log('🌐 Page info:', pageInfo);
-	
-	// Look for UCSB GOLD specific elements
-	const goldElements = {
-		tables: document.querySelectorAll('table').length,
-		forms: document.querySelectorAll('form').length,
-		courseResults: document.querySelectorAll('[class*="result"], [class*="course"], [id*="result"], [id*="course"]').length,
-		instructorElements: document.querySelectorAll('[class*="instructor"], [id*="instructor"]').length
-	};
-	
-	console.log('🏗️  GOLD elements found:', goldElements);
-	
-	// Analyze text patterns on page
-	const pageText = document.body.textContent || '';
-	const coursePatterns = pageText.match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\s*[-–]/g) || [];
-	const uniqueCourses = [...new Set(coursePatterns)].slice(0, 15);
-	
-	console.log('📚 Course patterns detected on page:', uniqueCourses.length ? uniqueCourses : 'none');
-	
-	// Check for common UCSB GOLD table structures
-	const tables = Array.from(document.querySelectorAll('table'));
-	console.log('📊 Table analysis:');
-	tables.slice(0, 3).forEach((table, i) => {
-		const rows = table.querySelectorAll('tr').length;
-		const cells = table.querySelectorAll('td, th').length;
-		const hasInstructorColumn = Array.from(table.querySelectorAll('th, td'))
-			.some(cell => /instructor/i.test(cell.textContent || ''));
-		
-		console.log(`   Table ${i + 1}: ${rows} rows, ${cells} cells, instructor column: ${hasInstructorColumn}`);
-		
-		// Show sample header row
-		const headerRow = table.querySelector('tr');
-		if (headerRow) {
-			const headers = Array.from(headerRow.querySelectorAll('th, td'))
-				.map(cell => (cell.textContent || '').trim())
-				.filter(text => text.length > 0)
-				.slice(0, 6);
-			console.log(`   Sample headers: [${headers.join(', ')}]`);
-		}
-	});
-	
-	// Look for course section headers in the DOM
-	const potentialCourseHeaders = Array.from(document.querySelectorAll('*'))
-		.map(el => (el.textContent || '').trim())
-		.filter(text => /^[A-Z]{2,6}\s+\d{1,3}[A-Z]?\s*[-–]/.test(text))
-		.slice(0, 10);
-		
-	console.log('🎯 Potential course headers in DOM:', potentialCourseHeaders.length ? potentialCourseHeaders : 'none found');
-	
-	console.log('📋 === PAGE STRUCTURE ANALYSIS END ===\n');
-}
-
 function observeAndRender() {
 	const observer = new MutationObserver(() => scheduleScan());
 	observer.observe(document, { childList: true, subtree: true });
@@ -627,47 +343,23 @@ function observeAndRender() {
 	}
 
 	async function scan() {
-		console.log('\n🚀 === MAIN SCAN PROCESS START ===');
-		
-		// Analyze page structure first
-		analyzePageStructure();
-		
 		const nodes = findInstructorNodes();
-		console.log('👥 Instructor candidates found:', nodes.length);
-		
-		if (!nodes.length) {
-			console.log('❌ No instructor nodes found - scan aborted');
-			console.log('🚀 === MAIN SCAN PROCESS END ===\n');
-			return;
-		}
-		
-		// Load both datasets in parallel
-		console.log('📚 Loading professor and course data in parallel...');
-		const [lookup, courseLookup] = await Promise.all([
-			ensureRatingsLoaded(),
-			ensureCourseDataLoaded()
-		]);
-		console.log('✅ Data loading results:');
-		console.log('   - Professor data:', !!lookup, `(${lookup ? lookup.size : 0} entries)`);
-		console.log('   - Course data:', !!courseLookup, `(${courseLookup ? courseLookup.size : 0} entries)`);
-		
-		if (!lookup) {
-			console.log('❌ No professor data available - scan aborted');
-			console.log('🚀 === MAIN SCAN PROCESS END ===\n');
-			return;
-		}
+		console.log('[RateMyGaucho] instructor candidates:', nodes.length);
+		if (!nodes.length) return;
+		const lookup = await ensureRatingsLoaded();
+		const courseLookup = await ensureCoursesLoaded();
+		if (!lookup) return;
 		const sample = nodes.slice(0, 5).map(n => (n.textContent||'').trim().replace(/\s+/g,' '));
 		console.log('[RateMyGaucho] sample candidate texts:', sample);
 		
 		let matchedCount = 0;
+		let courseFoundCount = 0;
 		let totalProcessed = 0;
 		
 		for (const node of nodes) {
 			if (node.dataset.rmgInitialized === '1') continue;
 			node.dataset.rmgInitialized = '1';
 			totalProcessed++;
-			
-			console.log(`\n👤 === PROCESSING INSTRUCTOR ${totalProcessed}/${nodes.length} ===`);
 			
 			const info = extractInstructorInfo(node);
 			console.log('[RateMyGaucho] Processing:', info.raw, '-> names:', info.names);
@@ -678,160 +370,41 @@ function observeAndRender() {
 				console.log('[RateMyGaucho] Keys for', name, ':', keys.slice(0, 5)); // Show first 5 keys
 			}
 			
-			// Extract course code from the same row and context
-			const row = node.closest('tr, .row, .resultsRow, .SSR_CLSRSLT_WRK, .sectionRow, .CourseRow');
-			
-			// Enhanced course code extraction with more context
-			let courseCode = null;
-			
-			if (row) {
-				// Try multiple extraction strategies
-				courseCode = extractCourseCodeFromRow(row);
-				
-				// If no course code found, try looking at the table structure
-				if (!courseCode) {
-					const table = row.closest('table');
-					if (table) {
-						// Look for course title in previous rows within the same table
-						const allRows = Array.from(table.querySelectorAll('tr'));
-						const currentRowIndex = allRows.indexOf(row);
-						
-						// Check 5 rows before current row for course titles
-						for (let i = Math.max(0, currentRowIndex - 5); i < currentRowIndex; i++) {
-							const prevRow = allRows[i];
-							const courseMatch = extractCourseCodeFromRow(prevRow);
-							if (courseMatch) {
-								courseCode = courseMatch;
-								console.log('[RateMyGaucho] Course code found in previous row', i, ':', courseCode);
-								break;
-							}
-						}
-					}
-				}
-			}
-			
-			const courseRec = courseLookup && courseCode ? courseLookup.get(normalizeCourseCode(courseCode)) : null;
-			
-			console.log('\n🧬 === COURSE LOOKUP DEBUG ===');
-			console.log('👤 Instructor:', info.raw);
-			console.log('🔍 Course code result:', courseCode || 'NULL');
+			const match = matchInstructor(info, lookup);
+			const courseCode = extractCourseCode(node);
+			const courseList = courseCode && courseLookup ? courseLookup.get(normalizeCourseCode(courseCode)) : null;
+			const courseData = Array.isArray(courseList) ? pickCourseDataForInstructor(courseList, match) : null;
 			
 			if (courseCode) {
-				const normalizedCode = normalizeCourseCode(courseCode);
-				console.log('🎯 Course normalization:', `"${courseCode}" -> "${normalizedCode}"`);
-				
-				if (courseRec) {
-					console.log('✅ COURSE MATCHED in lookup!');
-					console.log('   📚 Course:', courseRec.courseName);
-					console.log('   🎓 Grading:', courseRec.gradingBasis);
-					console.log('   📊 Enrollment trend:', courseRec.enrollmentTrend);
-					console.log('   📈 Grade trend:', courseRec.gradingTrend);
-					console.log('   💬 Reviews count:', courseRec.recentReviews?.length || 0);
-				} else {
-					console.log('❌ COURSE NOT FOUND in lookup:', normalizedCode);
-					
-					// Comprehensive similarity search
-					if (courseLookup && courseLookup.size > 0) {
-						console.log('🔍 Lookup diagnostics:');
-						console.log('   - Total courses in lookup:', courseLookup.size);
-						
-						// Show all courses starting with same letters
-						const prefix = normalizedCode.split(' ')[0];
-						const prefixMatches = Array.from(courseLookup.keys())
-							.filter(key => key.startsWith(prefix))
-							.slice(0, 10);
-						console.log(`   - Courses starting with "${prefix}":`, prefixMatches);
-						
-						// Show exact pattern matches
-						const exactPattern = new RegExp(`^${normalizedCode.replace(/\s+/g, '\\s+')}$`, 'i');
-						const exactMatches = Array.from(courseLookup.keys())
-							.filter(key => exactPattern.test(key));
-						console.log(`   - Exact pattern matches for "${normalizedCode}":`, exactMatches);
-						
-						// Show fuzzy matches (similar length and structure)
-						const fuzzyMatches = Array.from(courseLookup.keys())
-							.filter(key => {
-								const parts = key.split(' ');
-								const searchParts = normalizedCode.split(' ');
-								return parts.length === searchParts.length && 
-								       parts[0] === searchParts[0] &&
-								       Math.abs(parts[1]?.length - searchParts[1]?.length) <= 1;
-							})
-							.slice(0, 5);
-						console.log(`   - Fuzzy matches for "${normalizedCode}":`, fuzzyMatches);
-						
-						// Show some random samples from lookup for reference
-						const sampleKeys = Array.from(courseLookup.keys()).slice(0, 10);
-						console.log('   - Sample lookup keys:', sampleKeys);
-					}
-				}
-			} else if (row) {
-				console.log('❌ NO COURSE CODE extracted for instructor:', info.raw);
-				
-				// Detailed row analysis
-				console.log('🔍 Row analysis:');
-				console.log('   - Row tag:', row.tagName);
-				console.log('   - Row classes:', row.className || 'none');
-				console.log('   - Row ID:', row.id || 'none');
-				console.log('   - Row text (first 100 chars):', (row.textContent || '').slice(0, 100));
-				
-				// Show surrounding DOM context
-				console.log('🌐 DOM context:');
-				let parent = row.parentElement;
-				for (let level = 0; level < 3 && parent; level++) {
-					const text = (parent.textContent || '').trim();
-					console.log(`   ${level + 1}. ${parent.tagName}.${parent.className}: "${text.slice(0, 80)}"${text.length > 80 ? '...' : ''}`);
-					parent = parent.parentElement;
-				}
+				console.log('[RateMyGaucho] Extracted course code:', courseCode, 'normalized:', normalizeCourseCode(courseCode));
 			}
-			console.log('🧬 === COURSE LOOKUP DEBUG END ===\n');
 			
-			const match = matchInstructor(info, lookup);
 			if (match) {
 				matchedCount++;
 				console.log('[RateMyGaucho] MATCHED:', info.raw, '->', match.firstName, match.lastName, match.rmpScore);
-				renderCard(node, match, courseRec);
+				if (courseData) {
+					courseFoundCount++;
+					const filterStatus = courseData._reviewsFiltered ? '(filtered)' : '(fallback)';
+					console.log('[RateMyGaucho] Course data chosen for instructor:',
+						`${match.firstName} ${match.lastName}`, '->', courseData.courseName,
+						'filteredReviews:', Array.isArray(courseData.recentReviews) ? courseData.recentReviews.length : 0, filterStatus);
+				}
+				// Gate course data: only show when reviews specifically mention the matched professor
+				const gatedCourseData = (courseData && courseData._reviewsFiltered && Array.isArray(courseData.recentReviews) && courseData.recentReviews.length > 0)
+					? courseData
+					: null;
+				
+				if (courseData && !gatedCourseData) {
+					console.log('[RateMyGaucho] SKIPPED course data for', `${match.firstName} ${match.lastName}`, '- no instructor-specific reviews found');
+				}
+				
+				renderCard(node, match, gatedCourseData);
 			} else {
 				console.log('[RateMyGaucho] NO MATCH for:', info.raw);
 			}
 		}
 		
-		// Final scan summary
-		console.log('\n📊 === SCAN SUMMARY ===');
-		console.log('👥 Instructor processing:');
-		console.log(`   - Candidates found: ${nodes.length}`);
-		console.log(`   - Successfully processed: ${totalProcessed}`);
-		console.log(`   - Professor matches: ${matchedCount}`);
-		console.log(`   - Match rate: ${totalProcessed > 0 ? Math.round((matchedCount / totalProcessed) * 100) : 0}%`);
-		
-		// Course extraction statistics
-		let courseExtractionCount = 0;
-		let courseMatchCount = 0;
-		
-		for (const node of nodes.slice(0, totalProcessed)) {
-			if (node.dataset.rmgInitialized === '1') {
-				const row = node.closest('tr, .row, .resultsRow, .SSR_CLSRSLT_WRK, .sectionRow, .CourseRow');
-				if (row) {
-					// Quick re-check for course codes (non-invasive)
-					const quickCourseCode = (row.textContent || '').match(/\b([A-Z]{2,6})\s+(\d{1,3}[A-Z]?)\b/);
-					if (quickCourseCode) courseExtractionCount++;
-					
-					if (courseLookup) {
-						const normalizedQuick = normalizeCourseCode(`${quickCourseCode?.[1] || ''} ${quickCourseCode?.[2] || ''}`);
-						if (normalizedQuick && courseLookup.has(normalizedQuick)) {
-							courseMatchCount++;
-						}
-					}
-				}
-			}
-		}
-		
-		console.log('📚 Course processing:');
-		console.log(`   - Course codes extracted: ${courseExtractionCount}`);
-		console.log(`   - Course matches in lookup: ${courseMatchCount}`);
-		console.log(`   - Course data available: ${!!courseLookup} (${courseLookup ? courseLookup.size : 0} total)`);
-		
-		console.log('🚀 === MAIN SCAN PROCESS END ===\n');
+		console.log(`[RateMyGaucho] Summary: ${matchedCount}/${totalProcessed} instructors matched, ${courseFoundCount}/${matchedCount} with course data`);
 	}
 }
 
@@ -1058,7 +631,7 @@ function matchInstructor(info, lookup) {
 	return best;
 }
 
-function renderCard(anchorNode, record, courseRec = null) {
+function renderCard(anchorNode, record, courseData = null) {
 	const card = document.createElement('div');
 	const rating = Number(record.rmpScore || 0);
 	card.className = 'rmg-card ' + (rating >= 4 ? 'rmg-good' : rating >= 3 ? 'rmg-ok' : 'rmg-bad');
@@ -1129,14 +702,6 @@ function renderCard(anchorNode, record, courseRec = null) {
 	const bar = document.createElement('span');
 	meter.appendChild(bar);
 
-	// Course metadata section
-	if (courseRec) {
-		const courseMeta = renderCourseMeta(courseRec);
-		if (courseMeta) {
-			card.appendChild(courseMeta);
-		}
-	}
-
 	const actions = document.createElement('div');
 	actions.className = 'rmg-actions';
 
@@ -1147,11 +712,83 @@ function renderCard(anchorNode, record, courseRec = null) {
 	link.href = record.profileUrl || 'https://ucsbplat.com/instructor/';
 	link.textContent = 'UCSB Plat';
 
-	// Removed Courses button as requested
+	// Course data section
+	let courseInfo = null;
+	if (courseData) {
+		courseInfo = document.createElement('div');
+		courseInfo.className = 'rmg-course-info';
+		
+		// Course name
+		const courseName = document.createElement('div');
+		courseName.className = 'rmg-course-name';
+		courseName.textContent = courseData.courseName;
+		courseInfo.appendChild(courseName);
+		
+		// Grading basis
+		if (courseData.gradingBasis) {
+			const gradingBasis = document.createElement('div');
+			gradingBasis.className = 'rmg-course-detail';
+			gradingBasis.textContent = `Grading: ${courseData.gradingBasis}`;
+			courseInfo.appendChild(gradingBasis);
+		}
+		
+		// Grading trend
+		if (courseData.gradingTrend && courseData.gradingTrend.length > 0) {
+			const gradingTrend = document.createElement('div');
+			gradingTrend.className = 'rmg-course-detail';
+			gradingTrend.textContent = `Grade Trend: ${courseData.gradingTrend.join(', ')}`;
+			courseInfo.appendChild(gradingTrend);
+		}
+		
+		// Enrollment trend
+		if (courseData.enrollmentTrend && courseData.enrollmentTrend.length > 0) {
+			const enrollmentTrend = document.createElement('div');
+			enrollmentTrend.className = 'rmg-course-detail';
+			enrollmentTrend.textContent = `Enrollment: ${courseData.enrollmentTrend.join(' → ')}`;
+			courseInfo.appendChild(enrollmentTrend);
+		}
+		
+		// Recent reviews
+		if (courseData.recentReviews && courseData.recentReviews.length > 0) {
+			const reviewsContainer = document.createElement('div');
+			reviewsContainer.className = 'rmg-course-reviews';
+			
+			const reviewsTitle = document.createElement('div');
+			reviewsTitle.className = 'rmg-course-reviews-title';
+			reviewsTitle.textContent = 'Recent Reviews:';
+			reviewsContainer.appendChild(reviewsTitle);
+			
+			// Show up to 2 most recent reviews, truncated
+			const reviewsToShow = courseData.recentReviews.slice(0, 2);
+			for (const review of reviewsToShow) {
+				const reviewElement = document.createElement('div');
+				reviewElement.className = 'rmg-course-review';
+				const truncatedReview = review.length > 150 ? review.substring(0, 150) + '...' : review;
+				reviewElement.textContent = `"${truncatedReview}"`;
+				reviewsContainer.appendChild(reviewElement);
+			}
+			
+			courseInfo.appendChild(reviewsContainer);
+		}
+		
+		// Course URL link
+		if (courseData.courseUrl) {
+			const courseLink = document.createElement('a');
+			courseLink.className = 'rmg-link rmg-course-link';
+			courseLink.target = '_blank';
+			courseLink.rel = 'noopener noreferrer';
+			courseLink.href = courseData.courseUrl;
+			courseLink.textContent = 'Course Info';
+			actions.appendChild(courseLink);
+		}
+	}
 
 	card.appendChild(badge);
 	card.appendChild(stars);
 	card.appendChild(sub);
+	if (courseInfo) {
+		card.appendChild(courseInfo);
+	}
 	card.appendChild(meter);
 	actions.appendChild(link);
 	card.appendChild(actions);
@@ -1176,170 +813,135 @@ function renderCard(anchorNode, record, courseRec = null) {
 	});
 }
 
-function renderCourseMeta(courseRec) {
-	if (!courseRec) return null;
-	
-	console.log('🎨 Rendering course metadata for:', courseRec.courseName);
-	
-	const courseMeta = document.createElement('div');
-	courseMeta.className = 'rmg-course';
-
-	// Header with course name and grading basis
-	const header = document.createElement('div');
-	header.className = 'rmg-course-header';
-	
-	if (courseRec.courseName) {
-		const courseTitle = document.createElement('div');
-		courseTitle.className = 'rmg-course-title';
-		courseTitle.textContent = courseRec.courseName;
-		header.appendChild(courseTitle);
-	}
-
-	if (courseRec.gradingBasis) {
-		const chip = document.createElement('span');
-		chip.className = 'rmg-chip';
-		chip.textContent = courseRec.gradingBasis;
-		header.appendChild(chip);
-	}
-
-	courseMeta.appendChild(header);
-
-	// Stats row with enrollment and grade data
-	const statsRow = document.createElement('div');
-	statsRow.className = 'rmg-course-stats';
-
-	// Enrollment trend with sparkline and numbers
-	if (courseRec.enrollmentTrend && courseRec.enrollmentTrend.length > 0) {
-		const enrollSection = document.createElement('div');
-		enrollSection.className = 'rmg-stat-section';
-		
-		const enrollLabel = document.createElement('div');
-		enrollLabel.className = 'rmg-stat-label';
-		enrollLabel.textContent = 'Enrollment';
-		enrollSection.appendChild(enrollLabel);
-		
-		// Current enrollment (most recent)
-		const currentEnrollment = courseRec.enrollmentTrend[courseRec.enrollmentTrend.length - 1];
-		if (typeof currentEnrollment === 'number') {
-			const enrollNumber = document.createElement('div');
-			enrollNumber.className = 'rmg-stat-number';
-			enrollNumber.textContent = currentEnrollment.toString();
-			enrollSection.appendChild(enrollNumber);
-		}
-		
-		// Sparkline
-		const enrollSpark = document.createElement('div');
-		enrollSpark.className = 'rmg-sparkline';
-		enrollSpark.setAttribute('aria-label', `Enrollment trend: ${courseRec.enrollmentTrend.join(' → ')}`);
-		
-		const maxVal = Math.max(...courseRec.enrollmentTrend.filter(v => typeof v === 'number' && !isNaN(v)));
-		if (maxVal > 0) {
-			courseRec.enrollmentTrend.forEach((val, i) => {
-				if (typeof val === 'number' && !isNaN(val)) {
-					const bar = document.createElement('span');
-					bar.className = 'rmg-spark-bar';
-					bar.style.height = `${Math.max(3, (val / maxVal) * 24)}px`;
-					bar.title = `Quarter ${i + 1}: ${val} students`;
-					enrollSpark.appendChild(bar);
-				}
-			});
-			enrollSection.appendChild(enrollSpark);
-		}
-		
-		statsRow.appendChild(enrollSection);
-	}
-
-	// Grade distribution
-	if (courseRec.gradingTrend && courseRec.gradingTrend.length > 0) {
-		const gradeSection = document.createElement('div');
-		gradeSection.className = 'rmg-stat-section';
-		
-		const gradeLabel = document.createElement('div');
-		gradeLabel.className = 'rmg-stat-label';
-		gradeLabel.textContent = 'Recent Grades';
-		gradeSection.appendChild(gradeLabel);
-		
-		const gradeDisplay = document.createElement('div');
-		gradeDisplay.className = 'rmg-grade-pills';
-		
-		// Show recent grade distribution
-		const recentGrades = courseRec.gradingTrend.slice(-4); // Last 4 quarters
-		recentGrades.forEach((grade, i) => {
-			if (typeof grade === 'string' && grade.trim()) {
-				const gradePill = document.createElement('span');
-				gradePill.className = `rmg-grade-pill rmg-grade-${getGradeClass(grade)}`;
-				gradePill.textContent = grade.trim();
-				gradePill.title = `Quarter ${recentGrades.length - i}: ${grade}`;
-				gradeDisplay.appendChild(gradePill);
+function extractCourseCode(instructorNode) {
+	// Helper function to find valid course codes in text
+	function findValidCourseCodeInText(text, courseLookup) {
+		const normalizedText = text.trim().replace(/\u00a0/g, ' ').replace(/\s+/g, ' ');
+		// Find all potential course code candidates
+		const matches = normalizedText.matchAll(/\b([A-Z]{2,8})\s+(\d{1,3}[A-Z]*)\b/g);
+		for (const match of matches) {
+			const candidate = `${match[1]} ${match[2]}`;
+			const normalized = normalizeCourseCode(candidate);
+			if (courseLookup && courseLookup.has(normalized)) {
+				return candidate;
 			}
-		});
-		
-		gradeSection.appendChild(gradeDisplay);
-		statsRow.appendChild(gradeSection);
-	}
-
-	if (statsRow.children.length > 0) {
-		courseMeta.appendChild(statsRow);
-	}
-
-	// Recent student review
-	if (courseRec.recentReviews && courseRec.recentReviews.length > 0) {
-		const firstReview = courseRec.recentReviews[0];
-		if (typeof firstReview === 'string' && firstReview.trim()) {
-			const reviewSection = document.createElement('div');
-			reviewSection.className = 'rmg-review-section';
-			
-			const reviewIcon = document.createElement('span');
-			reviewIcon.className = 'rmg-review-icon';
-			reviewIcon.textContent = '💬';
-			reviewSection.appendChild(reviewIcon);
-			
-			const reviewText = document.createElement('div');
-			reviewText.className = 'rmg-review-text';
-			// Clean up the review text and truncate nicely
-			const cleanReview = firstReview.replace(/[="]/g, '').trim();
-			const truncatedReview = cleanReview.length > 140 ? 
-				cleanReview.slice(0, 140) + '…' : cleanReview;
-			reviewText.textContent = `"${truncatedReview}"`;
-			reviewSection.appendChild(reviewText);
-			
-			// Review metadata if available
-			const reviewMeta = document.createElement('div');
-			reviewMeta.className = 'rmg-review-meta';
-			reviewMeta.textContent = `Recent student feedback`;
-			reviewSection.appendChild(reviewMeta);
-			
-			courseMeta.appendChild(reviewSection);
 		}
+		return null;
 	}
 
-	// Course link if available
-	if (courseRec.courseUrl) {
-		const linkSection = document.createElement('div');
-		linkSection.className = 'rmg-course-actions';
+	try {
+		// Find the containing row
+		const row = instructorNode.closest('tr, .row, .resultsRow, .SSR_CLSRSLT_WRK, .sectionRow, .CourseRow');
+		if (!row) return null;
 		
-		const courseLink = document.createElement('a');
-		courseLink.className = 'rmg-course-link';
-		courseLink.href = courseRec.courseUrl;
-		courseLink.target = '_blank';
-		courseLink.rel = 'noopener noreferrer';
-		courseLink.textContent = 'View Course Details';
-		courseLink.title = 'Open course page on UCSB Plat';
-		linkSection.appendChild(courseLink);
+		// First, try the same row (current logic) - expanded to include anchors and headers
+		const cells = Array.from(row.querySelectorAll('td, th, div, span, a, strong, b'));
+		for (const cell of cells) {
+			if (cell === instructorNode || cell.contains(instructorNode)) continue;
+			
+			const text = (cell.textContent || '').trim();
+			const courseCode = findValidCourseCodeInText(text, window.__rmg_course_lookup);
+			if (courseCode) {
+				console.log('[RateMyGaucho] Extracted course code:', courseCode, 'from same row, text:', text.slice(0, 100));
+				return courseCode;
+			}
+		}
 		
-		courseMeta.appendChild(linkSection);
+		// If not found in same row, search previous sibling rows (likely header rows) - expanded depth and nodes
+		let prevRow = row.previousElementSibling;
+		for (let i = 0; prevRow && i < 30; i++) {
+			const prevCells = Array.from(prevRow.querySelectorAll('td, th, div, span, a, strong, b'));
+			for (const cell of prevCells) {
+				const text = (cell.textContent || '').trim();
+				const courseCode = findValidCourseCodeInText(text, window.__rmg_course_lookup);
+				if (courseCode) {
+					console.log('[RateMyGaucho] Extracted course code:', courseCode, 'from prev row', i, 'text:', text.slice(0, 100));
+					return courseCode;
+				}
+			}
+			prevRow = prevRow.previousElementSibling;
+		}
+		
+		// Ancestor walk: search outside the table by climbing ancestors and scanning their previous siblings
+		let container = row.parentElement;
+		for (let up = 0; container && up < 5; up++) {
+			let prev = container.previousElementSibling;
+			for (let j = 0; prev && j < 30; j++) {
+				const text = (prev.textContent || '').trim();
+				const courseCode = findValidCourseCodeInText(text, window.__rmg_course_lookup);
+				if (courseCode) {
+					console.log('[RateMyGaucho] Extracted course code:', courseCode, 'from ancestor walk level', up, 'sibling', j, 'text:', text.slice(0, 100));
+					return courseCode;
+				}
+				prev = prev.previousElementSibling;
+			}
+			container = container.parentElement;
+		}
+		
+		// Final fallback: search the entire table for course headers
+		const table = instructorNode.closest('table');
+		if (table) {
+			const allRows = Array.from(table.querySelectorAll('tr'));
+			const currentRowIndex = allRows.indexOf(row);
+			
+			// Search backwards from current row
+			for (let i = currentRowIndex - 1; i >= 0 && i >= currentRowIndex - 10; i--) {
+				const searchRow = allRows[i];
+				const searchCells = Array.from(searchRow.querySelectorAll('td, th, div, span, a, strong, b'));
+				
+				for (const cell of searchCells) {
+					const text = (cell.textContent || '').trim();
+					const courseCode = findValidCourseCodeInText(text, window.__rmg_course_lookup);
+					if (courseCode) {
+						console.log('[RateMyGaucho] Extracted course code:', courseCode, 'from table search, text:', text.slice(0, 100));
+						return courseCode;
+					}
+				}
+			}
+		}
+		
+		// Heuristic fallback: try to extract from "Course Info" button href or onclick
+		try {
+			const courseInfoButtons = Array.from(row.querySelectorAll('a, button')).filter(el => 
+				/course\s*info/i.test((el.textContent || '').trim())
+			);
+			
+			for (const btn of courseInfoButtons) {
+				// Try href first
+				if (btn.href) {
+					const hrefMatch = btn.href.match(/subject=([A-Z]+).*?catalogNbr=(\d+[A-Z]*)/i);
+					if (hrefMatch) {
+						const candidate = `${hrefMatch[1]} ${hrefMatch[2]}`;
+						const normalized = normalizeCourseCode(candidate);
+						if (window.__rmg_course_lookup && window.__rmg_course_lookup.has(normalized)) {
+							console.log('[RateMyGaucho] Extracted course code:', candidate, 'from Course Info href:', btn.href);
+							return candidate;
+						}
+					}
+				}
+				
+				// Try onclick attribute
+				const onclick = btn.getAttribute('onclick');
+				if (onclick) {
+					const onclickMatch = onclick.match(/subject['"]\s*:\s*['"]([A-Z]+)['"].*?catalogNbr['"]\s*:\s*['"](\d+[A-Z]*)['"]/i);
+					if (onclickMatch) {
+						const candidate = `${onclickMatch[1]} ${onclickMatch[2]}`;
+						const normalized = normalizeCourseCode(candidate);
+						if (window.__rmg_course_lookup && window.__rmg_course_lookup.has(normalized)) {
+							console.log('[RateMyGaucho] Extracted course code:', candidate, 'from Course Info onclick:', onclick.slice(0, 100));
+							return candidate;
+						}
+					}
+				}
+			}
+		} catch (e) {
+			console.warn('[RateMyGaucho] Error in Course Info button extraction:', e);
+		}
+		
+		console.log('[RateMyGaucho] No course code found for instructor:', (instructorNode.textContent || '').trim());
+		return null;
+	} catch (e) {
+		console.warn('[RateMyGaucho] Error extracting course code:', e);
+		return null;
 	}
-
-	return courseMeta.children.length > 0 ? courseMeta : null;
-}
-
-// Helper function to determine grade class for styling
-function getGradeClass(grade) {
-	const g = grade.toUpperCase().trim();
-	if (g.startsWith('A')) return 'excellent';
-	if (g.startsWith('B')) return 'good'; 
-	if (g.startsWith('C')) return 'average';
-	if (g.startsWith('D')) return 'below';
-	if (g.startsWith('F')) return 'failing';
-	return 'other';
 }
