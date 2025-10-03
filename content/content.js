@@ -882,14 +882,15 @@ function renderCard(anchorNode, record, courseData = null) {
 		stars.appendChild(starContainer);
 	}
 
-	// Meta line for additional info if present
+	// Meta line for any fallback info (e.g., when no course-specific grade data exists)
 	const meta = document.createElement('span');
 	meta.className = 'rmg-meta';
-	if (Array.isArray(record.gradeSummary) && record.gradeSummary.length) {
-		meta.textContent = `Grade trend: ${record.gradeSummary.join(' → ')}`;
-	} else {
-		meta.textContent = '';
-	}
+	const shouldShowFallbackGrade = (
+		(!courseData || !Array.isArray(courseData.gradingTrend) || courseData.gradingTrend.length === 0) &&
+		Array.isArray(record.gradeSummary) &&
+		record.gradeSummary.length > 0
+	);
+	meta.textContent = shouldShowFallbackGrade ? `Grade trend: ${record.gradeSummary.join(' → ')}` : '';
 
 	// Inline meter that fills proportionally to rating
 	const meter = document.createElement('div');
@@ -944,6 +945,17 @@ function renderCard(anchorNode, record, courseData = null) {
 			prof.className = 'rmg-course-detail';
 			prof.textContent = `Professor: ${courseData.csvProfessor}`;
 			courseInfo.appendChild(prof);
+		}
+
+		// Grade trend positioned directly beneath the professor label when available
+		const gradeTokens = Array.isArray(courseData.gradingTrend) && courseData.gradingTrend.length
+			? courseData.gradingTrend
+			: (Array.isArray(record.gradeSummary) && record.gradeSummary.length ? record.gradeSummary : null);
+		if (gradeTokens && gradeTokens.length) {
+			const gradeDetail = document.createElement('div');
+			gradeDetail.className = 'rmg-course-detail';
+			gradeDetail.textContent = `Grade trend: ${gradeTokens.join(' → ')}`;
+			courseInfo.appendChild(gradeDetail);
 		}
 		
 		// Review verification and counts (from CSV), if provided
