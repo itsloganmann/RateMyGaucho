@@ -930,14 +930,6 @@ function renderCard(anchorNode, record, courseData = null) {
 			courseInfo.appendChild(gradingBasis);
 		}
 		
-		// Grading trend
-		if (courseData.gradingTrend && courseData.gradingTrend.length > 0) {
-			const gradingTrend = document.createElement('div');
-			gradingTrend.className = 'rmg-course-detail';
-			gradingTrend.textContent = `Grade Trend: ${courseData.gradingTrend.join(', ')}`;
-			courseInfo.appendChild(gradingTrend);
-		}
-		
 		// Enrollment trend
 		if (courseData.enrollmentTrend && courseData.enrollmentTrend.length > 0) {
 			const enrollmentTrend = document.createElement('div');
@@ -950,7 +942,7 @@ function renderCard(anchorNode, record, courseData = null) {
 		if (courseData.csvProfessor) {
 			const prof = document.createElement('div');
 			prof.className = 'rmg-course-detail';
-			prof.textContent = `Professor (PLAT): ${courseData.csvProfessor}`;
+			prof.textContent = `Professor: ${courseData.csvProfessor}`;
 			courseInfo.appendChild(prof);
 		}
 		
