@@ -17,7 +17,7 @@ RateMyGaucho is designed with user privacy as a core principle. The extension **
 ### 2. How the Extension Works
 
 RateMyGaucho functions entirely on your local device. Its process is as follows:
-1.  It reads a pre-packaged, offline data file (`scores.csv`) containing professor ratings.
+1.  It reads a pre-packaged, offline data file (`courses_all_scraped.csv`) containing course and instructor information.
 2.  When you visit a UCSB GOLD course search page, the extension reads the publicly visible instructor names on that page.
 3.  It cross-references these names with its local data file.
 4.  It displays the corresponding rating directly on the page for your convenience.

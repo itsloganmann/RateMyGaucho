@@ -6,7 +6,7 @@ RateMyGaucho enhances UCSB GOLD by showing professor ratings and course data dir
 
 ## Novel Features
 
-*   **Offline & Private**: Works without an internet connection and never sends your data to external servers. All data is stored locally in CSV files.
+*   **Offline & Private**: Works without an internet connection and never sends your data to external servers. All data lives in a single packaged CSV (`courses_all_scraped.csv`).
 *   **Gaucho-Themed Ratings**: Displays professor ratings with custom, partially-filled Gaucho star icons for at-a-glance assessments.
 *   **In-Depth Course Data**: Goes beyond professor ratings to show course-specific details like grading trends, enrollment history, and recent student reviews.
 *   **Smart Review Filtering**: Intelligently filters reviews to show only those relevant to the specific instructor, providing more accurate insights.
@@ -24,6 +24,12 @@ RateMyGaucho enhances UCSB GOLD by showing professor ratings and course data dir
 To create a distributable ZIP file, run the appropriate script for your OS:
 *   **Windows**: `./scripts/package.ps1`
 *   **macOS/Linux**: `bash ./scripts/package.sh`
+
+The build script bundles the unified dataset and content script into `dist/RateMyGaucho.zip`, which is ready to upload to the Chrome Web Store.
+
+## Data Source
+
+The extension ships with `courses_all_scraped.csv` as its only data source. Every rating, review, and course record comes from this file, ensuring consistent results across the UI. When updating data, replace this CSV and rebuild the package.
 
 ## Contributing
 

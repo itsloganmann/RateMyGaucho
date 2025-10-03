@@ -72,54 +72,226 @@ try {
 	observeAndRender();
 })();
 
-let __rmg_lookup = null;
-let __rmg_loading = null;
+let __rmg_data_cache = null;
+let __rmg_data_loading = null;
 let __rmg_course_lookup = null;
-let __rmg_course_loading = null;
 
 async function ensureRatingsLoaded() {
-	if (__rmg_lookup) return __rmg_lookup;
-	if (__rmg_loading) return __rmg_loading;
-	__rmg_loading = (async () => {
-		try {
-			const csvUrl = chrome.runtime.getURL('scores.csv');
-			const res = await fetch(csvUrl);
-			if (!res.ok) return null;
-			const csvText = await res.text();
-			const records = parseCsv(csvText);
-			__rmg_lookup = buildLookup(records);
-			return __rmg_lookup;
-		} catch (_e) {
-			return null;
-		} finally {
-			__rmg_loading = null;
-		}
-	})();
-	return __rmg_loading;
+	const data = await ensureUnifiedData();
+	return data ? data.ratingsLookup : null;
 }
 
 async function ensureCoursesLoaded() {
-	if (__rmg_course_lookup) return __rmg_course_lookup;
-	if (__rmg_course_loading) return __rmg_course_loading;
-	__rmg_course_loading = (async () => {
+	const data = await ensureUnifiedData();
+	return data ? data.courseLookup : null;
+}
+
+async function ensureUnifiedData() {
+	if (__rmg_data_cache) return __rmg_data_cache;
+	if (__rmg_data_loading) return __rmg_data_loading;
+
+	__rmg_data_loading = (async () => {
 		try {
-			const csvUrl = chrome.runtime.getURL('ucsb_courses_final_corrected.csv');
+			console.log('[RateMyGaucho] Loading unified dataset: courses_all_scraped.csv');
+			const csvUrl = chrome.runtime.getURL('courses_all_scraped.csv');
 			const res = await fetch(csvUrl);
-			if (!res.ok) return null;
+			if (!res.ok) {
+				console.error('[RateMyGaucho] Failed to fetch courses_all_scraped.csv');
+				return null;
+			}
 			const csvText = await res.text();
-			const records = parseCourseCsv(csvText);
-			__rmg_course_lookup = buildCourseLookup(records);
-			// Store globally for extractCourseCode validation
+			const parsed = parseUnifiedCsv(csvText);
+			if (!parsed) return null;
+			__rmg_data_cache = parsed;
+			__rmg_course_lookup = parsed.courseLookup;
 			window.__rmg_course_lookup = __rmg_course_lookup;
-			return __rmg_course_lookup;
-		} catch (_e) {
-			console.error('[RateMyGaucho] Error loading course data:', _e);
+			console.log('[RateMyGaucho] ✅ Unified dataset ready:', {
+				courses: parsed.courseRecords.length,
+				instructors: parsed.instructors.length
+			});
+			return __rmg_data_cache;
+		} catch (error) {
+			console.error('[RateMyGaucho] Error loading unified dataset:', error);
 			return null;
 		} finally {
-			__rmg_course_loading = null;
+			__rmg_data_loading = null;
 		}
 	})();
-	return __rmg_course_loading;
+
+	return __rmg_data_loading;
+}
+
+function parseUnifiedCsv(csvText) {
+	try {
+		const parsed = Papa.parse(csvText, {
+			header: true,
+			skipEmptyLines: true,
+			transformHeader: (header) => header.trim()
+		});
+
+		if (parsed.errors && parsed.errors.length) {
+			console.warn('[RateMyGaucho] CSV parsing warnings:', parsed.errors);
+		}
+
+		const courseRecords = [];
+		const instructorAccumulator = new Map();
+
+		for (const row of parsed.data) {
+			const courseName = (row.course_name || '').trim();
+			if (!courseName) continue;
+
+			const courseRecord = {
+				courseName,
+				courseUrl: (row.course_url || '').trim(),
+				csvProfessor: (row.professor || '').trim(),
+				gradingBasis: '',
+				gradingTrend: parseFlexibleArray(row.grading_trend, { delimiter: '|', type: 'string' }),
+				enrollmentTrend: parseFlexibleArray(normalizeTrend(row.enrollment_trend), { delimiter: '|', type: 'number' }),
+				recentReviews: extractReviewsFromRow(row)
+			};
+
+			courseRecords.push(courseRecord);
+
+			const professorName = courseRecord.csvProfessor;
+			if (!professorName) continue;
+
+			const { firstName, lastName } = splitProfessorName(professorName);
+			if (!lastName) continue;
+
+			const dept = extractDepartmentFromCourse(courseName);
+			const normalizedKey = `${normalizePlain(lastName)}|${normalizePlain(firstName)}`;
+			let bucket = instructorAccumulator.get(normalizedKey);
+			if (!bucket) {
+				bucket = {
+					firstName,
+					lastName,
+					departments: new Set(dept ? [dept] : []),
+					reviews: [],
+					gradeTokens: [],
+					courseUrls: new Set(),
+					courses: []
+				};
+				instructorAccumulator.set(normalizedKey, bucket);
+			}
+
+			if (dept) bucket.departments.add(dept);
+			bucket.courses.push(courseRecord);
+			bucket.courseUrls.add(courseRecord.courseUrl || '');
+			if (Array.isArray(courseRecord.recentReviews) && courseRecord.recentReviews.length) {
+				bucket.reviews.push(...courseRecord.recentReviews);
+			}
+			if (Array.isArray(courseRecord.gradingTrend) && courseRecord.gradingTrend.length) {
+				bucket.gradeTokens.push(...courseRecord.gradingTrend);
+			}
+		}
+
+		const instructors = [];
+		for (const bucket of instructorAccumulator.values()) {
+			const departments = Array.from(bucket.departments);
+			const gradeSummary = Array.from(new Set(bucket.gradeTokens.map(token => token.toUpperCase())));
+			const rating = computeAggregateRating(bucket.gradeTokens, bucket.reviews.length);
+			const profileUrl = Array.from(bucket.courseUrls).find(Boolean) || '';
+
+			instructors.push({
+				firstName: bucket.firstName,
+				lastName: bucket.lastName,
+				department: departments[0] || '',
+				rmpScore: rating,
+				numReviews: bucket.reviews.length,
+				profileUrl,
+				gradeSummary,
+				reviewSamples: bucket.reviews.slice(0, 5),
+				courses: bucket.courses
+			});
+		}
+
+		const courseLookup = buildCourseLookup(courseRecords);
+		const ratingsLookup = buildLookup(instructors);
+
+		return { courseRecords, courseLookup, ratingsLookup, instructors };
+	} catch (error) {
+		console.error('[RateMyGaucho] Error parsing unified CSV:', error);
+		return null;
+	}
+}
+
+function normalizeTrend(raw) {
+	if (!raw) return '';
+	const text = String(raw).trim();
+	if (!text) return '';
+	return text.replace(/→/g, '|').replace(/[\/]/g, '|');
+}
+
+function extractReviewsFromRow(row) {
+	const reviews = [];
+	for (const [key, value] of Object.entries(row)) {
+		if (!/^review_/i.test(key)) continue;
+		const text = (value || '').toString().trim();
+		if (text) reviews.push(text);
+	}
+	return reviews;
+}
+
+function splitProfessorName(name) {
+	const tokens = (name || '').trim().split(/\s+/).filter(Boolean);
+	if (!tokens.length) return { firstName: '', lastName: '' };
+	if (tokens.length === 1) return { firstName: '', lastName: tokens[0] };
+	const lastName = tokens[tokens.length - 1];
+	const firstName = tokens.slice(0, -1).join(' ');
+	return { firstName, lastName };
+}
+
+function extractDepartmentFromCourse(courseName) {
+	if (!courseName) return '';
+	const match = courseName.match(/^([A-Z]{2,8})\b/);
+	return match ? match[1] : '';
+}
+
+function computeAggregateRating(gradeTokens, reviewCount) {
+	if (Array.isArray(gradeTokens) && gradeTokens.length) {
+		const values = gradeTokens.map(gradeTokenToRating).filter(Number.isFinite);
+		if (values.length) {
+			const avg = values.reduce((sum, value) => sum + value, 0) / values.length;
+			return Number(avg.toFixed(1));
+		}
+	}
+
+	if (reviewCount > 0) {
+		const fallback = Math.min(5, 3.2 + Math.min(reviewCount, 12) * 0.1);
+		return Number(fallback.toFixed(1));
+	}
+
+	return 3.0;
+}
+
+function gradeTokenToRating(token) {
+	if (!token) return NaN;
+	const normalized = token.toString().trim().toUpperCase();
+	if (!normalized) return NaN;
+	let base;
+	switch (normalized[0]) {
+		case 'A':
+			base = 5;
+			break;
+		case 'B':
+			base = 4;
+			break;
+		case 'C':
+			base = 3;
+			break;
+		case 'D':
+			base = 2;
+			break;
+		case 'F':
+			base = 1.2;
+			break;
+		default:
+			base = 3;
+	}
+
+	if (normalized.includes('+') && base < 5) base += 0.2;
+	if (normalized.includes('-') && base > 1) base -= 0.2;
+	return Math.max(1, Math.min(5, base));
 }
 
 function loadSettings() {
@@ -129,77 +301,41 @@ function loadSettings() {
 	});
 }
 
-function parseCsv(csvText) {
-	const lines = csvText.split(/\r?\n/).filter(Boolean);
-	if (!lines.length) return [];
-	lines.shift();
-	const out = [];
-	for (const line of lines) {
-		const cols = line.split(',');
-		if (cols.length < 6) continue;
-		const [department, first_name, last_name, rmp_score, num_reviews, profile_url] = cols;
-		const rec = {
-			department: (department||'').trim(),
-			firstName: (first_name||'').trim(),
-			lastName: (last_name||'').trim(),
-			rmpScore: Number(rmp_score),
-			numReviews: Number(num_reviews),
-			profileUrl: (profile_url||'').trim()
-		};
-		if (!Number.isFinite(rec.rmpScore) || !Number.isFinite(rec.numReviews)) continue;
-		out.push(rec);
-	}
-	return out;
-}
 
-function parseCourseCsv(csvText) {
-	try {
-		const parsed = Papa.parse(csvText, {
-			header: true,
-			skipEmptyLines: true,
-			transformHeader: (header) => header.trim()
-		});
-		
-		if (parsed.errors.length > 0) {
-			console.warn('[RateMyGaucho] CSV parsing warnings:', parsed.errors);
-		}
-		
-		const out = [];
-		for (const row of parsed.data) {
-			if (!row.course_name) continue;
-			
-			const rec = {
-				courseName: (row.course_name || '').trim(),
-				courseUrl: (row.course_url || '').trim(),
-				gradingBasis: (row.grading_basis || '').trim(),
-				gradingTrend: parseJsonArray(row.grading_trend),
-				enrollmentTrend: parseJsonArray(row.enrollment_trend),
-				recentReviews: parseJsonArray(row.recent_reviews)
-			};
-			
-			out.push(rec);
-		}
-		
-		console.log('[RateMyGaucho] Parsed', out.length, 'course records');
-		if (out.length > 0) {
-			console.log('[RateMyGaucho] Sample course records:', out.slice(0, 3));
-		}
-		return out;
-	} catch (e) {
-		console.error('[RateMyGaucho] Error parsing course CSV:', e);
-		return [];
-	}
-}
+function parseFlexibleArray(raw, { delimiter = '|', type = 'string', reviewSeparator = null } = {}) {
+	if (!raw || String(raw).trim() === '' || String(raw).toLowerCase() === 'no data') return [];
+	const text = String(raw).trim();
 
-function parseJsonArray(jsonString) {
-	if (!jsonString || jsonString.trim() === '') return [];
-	try {
-		const parsed = JSON.parse(jsonString);
-		return Array.isArray(parsed) ? parsed : [];
-	} catch (e) {
-		console.warn('[RateMyGaucho] Failed to parse JSON array:', jsonString, e);
-		return [];
+	// 1) Try JSON first for backward compatibility (handles legacy format)
+	if (text.startsWith('[') && text.endsWith(']')) {
+		try {
+			const parsed = JSON.parse(text);
+			if (Array.isArray(parsed)) {
+				return type === 'number' ? parsed.map(v => Number(v)).filter(n => Number.isFinite(n)) : parsed.map(v => String(v));
+			}
+		} catch (jsonError) {
+			// Not valid JSON, continue to other parsing methods
+			console.debug('[RateMyGaucho] JSON parse failed, trying delimiter parsing:', jsonError.message);
+		}
 	}
+
+	// 2) If a review separator is provided, use that (e.g., "|||" for reviews)
+	if (reviewSeparator && text.includes(reviewSeparator)) {
+		return text.split(reviewSeparator).map(s => s.trim()).filter(Boolean);
+	}
+
+	// 3) Otherwise, split on delimiter (e.g., pipes for trends)
+	if (delimiter && text.includes(delimiter)) {
+		const parts = text.split(delimiter).map(s => s.trim()).filter(Boolean);
+		return type === 'number' ? parts.map(v => Number(v)).filter(n => Number.isFinite(n)) : parts;
+	}
+
+	// 4) Fallback: single token
+	if (type === 'number') {
+		const num = Number(text);
+		return Number.isFinite(num) ? [num] : [];
+	}
+	return [text];
 }
 
 function buildCourseLookup(records) {
@@ -230,12 +366,16 @@ function filterReviewsByInstructor(reviews, matchedInstructor) {
 	if (!last) return [];
 	
 	const filtered = [];
+	const teachingTerms = ['prof', 'professor', 'instructor', 'lecture', 'class', 'midterm', 'final', 'homework', 'assignment', 'exam', 'grade', 'quiz', 'teach'];
+	
 	for (const review of reviews) {
 		const text = String(review || '').toLowerCase();
 		
 		// Use word boundaries to avoid false matches like "ang" in "change"
 		const lastRegex = new RegExp(`\\b${last.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+		const firstRegex = first ? new RegExp(`\\b${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i') : null;
 		
+		// Primary: Last name found
 		if (lastRegex.test(text)) {
 			// Additional boost if first name or common professor titles appear
 			if ((first && text.includes(first)) || 
@@ -244,6 +384,13 @@ function filterReviewsByInstructor(reviews, matchedInstructor) {
 				text.includes(`dr ${last}`)) {
 				filtered.push(review);
 			} else {
+				filtered.push(review);
+			}
+		}
+		// Secondary: First name found with teaching context (conservative expansion)
+		else if (firstRegex && firstRegex.test(text)) {
+			const hasContext = teachingTerms.some(t => text.includes(t));
+			if (hasContext) {
 				filtered.push(review);
 			}
 		}
@@ -325,6 +472,23 @@ function normalizeName(s = '') {
 	return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
+function normalizePlain(s = '') {
+	return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
+}
+
+function csvProfessorMatches(courseData, matchedInstructor) {
+	if (!courseData || !matchedInstructor) return false;
+	const prof = normalizePlain(courseData.csvProfessor || '');
+	const first = normalizePlain(matchedInstructor.firstName || '');
+	const last = normalizePlain(matchedInstructor.lastName || '');
+	if (!prof || !last) return false;
+
+	// Accept when CSV professor includes last name, or full name
+	if (prof.includes(last)) return true;
+	if (first && prof.includes(`${first} ${last}`)) return true;
+	return false;
+}
+
 function makeKey(last, first, dept) {
 	const ln = normalizeName(last);
 	const fi = first ? normalizeName(first).slice(0, 1) : '';
@@ -372,36 +536,62 @@ function observeAndRender() {
 			
 			const match = matchInstructor(info, lookup);
 			const courseCode = extractCourseCode(node);
-			const courseList = courseCode && courseLookup ? courseLookup.get(normalizeCourseCode(courseCode)) : null;
+			const normalizedCourse = courseCode ? normalizeCourseCode(courseCode) : null;
+			const courseList = (normalizedCourse && courseLookup) ? courseLookup.get(normalizedCourse) : null;
 			const courseData = Array.isArray(courseList) ? pickCourseDataForInstructor(courseList, match) : null;
 			
 			if (courseCode) {
-				console.log('[RateMyGaucho] Extracted course code:', courseCode, 'normalized:', normalizeCourseCode(courseCode));
+				console.log('[RateMyGaucho] Extracted course code:', courseCode, 'normalized:', normalizedCourse);
 			}
 			
-			if (match) {
-				matchedCount++;
-				console.log('[RateMyGaucho] MATCHED:', info.raw, '->', match.firstName, match.lastName, match.rmpScore);
-				if (courseData) {
-					courseFoundCount++;
-					const filterStatus = courseData._reviewsFiltered ? '(filtered)' : '(fallback)';
-					console.log('[RateMyGaucho] Course data chosen for instructor:',
-						`${match.firstName} ${match.lastName}`, '->', courseData.courseName,
-						'filteredReviews:', Array.isArray(courseData.recentReviews) ? courseData.recentReviews.length : 0, filterStatus);
-				}
-				// Gate course data: only show when reviews specifically mention the matched professor
-				const gatedCourseData = (courseData && courseData._reviewsFiltered && Array.isArray(courseData.recentReviews) && courseData.recentReviews.length > 0)
-					? courseData
-					: null;
-				
-				if (courseData && !gatedCourseData) {
-					console.log('[RateMyGaucho] SKIPPED course data for', `${match.firstName} ${match.lastName}`, '- no instructor-specific reviews found');
-				}
-				
-				renderCard(node, match, gatedCourseData);
-			} else {
+			if (!match) {
 				console.log('[RateMyGaucho] NO MATCH for:', info.raw);
+				continue;
 			}
+			
+			matchedCount++;
+			console.log('[RateMyGaucho] MATCHED:', info.raw, '->', match.firstName, match.lastName, match.rmpScore);
+			
+			if (!normalizedCourse || !Array.isArray(courseList) || courseList.length === 0) {
+				console.log('[RateMyGaucho] Skipping card - course not present in dataset:', normalizedCourse);
+				continue;
+			}
+			
+			if (!courseData) {
+				console.log('[RateMyGaucho] Skipping card - no course data selected for instructor:', normalizedCourse);
+				continue;
+			}
+			
+			const filterStatus = courseData._reviewsFiltered ? '(filtered)' : '(fallback)';
+			console.log('[RateMyGaucho] Course data chosen for instructor:',
+				`${match.firstName} ${match.lastName}`, '->', courseData.courseName,
+				'filteredReviews:', Array.isArray(courseData.recentReviews) ? courseData.recentReviews.length : 0, filterStatus);
+			
+			// Gate course data: show when reviews mention instructor OR CSV verification confirms match
+			const verifiedByCsvProfessor = csvProfessorMatches(courseData, match);
+			const verifiedByFlag = typeof courseData?.reviewVerification === 'string'
+				&& courseData.reviewVerification.toUpperCase().includes('MATCH');
+			
+			const hasInstructorSpecificReviews = (
+				courseData && courseData._reviewsFiltered
+				&& Array.isArray(courseData.recentReviews)
+				&& courseData.recentReviews.length > 0
+			);
+			
+			const gatedCourseData = (courseData && (hasInstructorSpecificReviews || verifiedByCsvProfessor || verifiedByFlag))
+				? courseData
+				: null;
+			
+			if (!gatedCourseData) {
+				console.log('[RateMyGaucho] SKIPPED course data for',
+					`${match.firstName} ${match.lastName}`,
+					'- gating conditions not met',
+					{ hasInstructorSpecificReviews, verifiedByCsvProfessor, reviewVerification: courseData?.reviewVerification });
+				continue;
+			}
+			
+			courseFoundCount++;
+			renderCard(node, match, gatedCourseData);
 		}
 		
 		console.log(`[RateMyGaucho] Summary: ${matchedCount}/${totalProcessed} instructors matched, ${courseFoundCount}/${matchedCount} with course data`);
@@ -648,7 +838,8 @@ function renderCard(anchorNode, record, courseData = null) {
 
 	const sub = document.createElement('span');
 	sub.className = 'rmg-subtle';
-	sub.textContent = `${record.numReviews} reviews`;
+	const reviewLabel = record.numReviews === 1 ? 'review' : 'reviews';
+	sub.textContent = record.numReviews ? `${record.numReviews} course ${reviewLabel}` : 'No course reviews yet';
 
 	const stars = document.createElement('div');
 	stars.className = 'rmg-stars';
@@ -694,7 +885,11 @@ function renderCard(anchorNode, record, courseData = null) {
 	// Meta line for additional info if present
 	const meta = document.createElement('span');
 	meta.className = 'rmg-meta';
-	meta.textContent = ''; // No additional meta info in the complete list CSV
+	if (Array.isArray(record.gradeSummary) && record.gradeSummary.length) {
+		meta.textContent = `Grade trend: ${record.gradeSummary.join(' → ')}`;
+	} else {
+		meta.textContent = '';
+	}
 
 	// Inline meter that fills proportionally to rating
 	const meter = document.createElement('div');
@@ -709,8 +904,11 @@ function renderCard(anchorNode, record, courseData = null) {
 	link.className = 'rmg-link';
 	link.target = '_blank';
 	link.rel = 'noopener noreferrer';
-	link.href = record.profileUrl || 'https://ucsbplat.com/instructor/';
-	link.textContent = 'UCSB Plat';
+	const fallbackCourseUrl = courseData?.courseUrl
+		|| (Array.isArray(record.courses) && record.courses.length ? record.courses[0].courseUrl : '')
+		|| 'https://ucsbplat.com/';
+	link.href = record.profileUrl || fallbackCourseUrl;
+	link.textContent = 'View on UCSB Plat';
 
 	// Course data section
 	let courseInfo = null;
@@ -746,6 +944,34 @@ function renderCard(anchorNode, record, courseData = null) {
 			enrollmentTrend.className = 'rmg-course-detail';
 			enrollmentTrend.textContent = `Enrollment: ${courseData.enrollmentTrend.join(' → ')}`;
 			courseInfo.appendChild(enrollmentTrend);
+		}
+		
+		// Platform instructor (from CSV), if provided
+		if (courseData.csvProfessor) {
+			const prof = document.createElement('div');
+			prof.className = 'rmg-course-detail';
+			prof.textContent = `Professor (PLAT): ${courseData.csvProfessor}`;
+			courseInfo.appendChild(prof);
+		}
+		
+		// Review verification and counts (from CSV), if provided
+		const hasCounts = Number.isFinite(courseData.foundReviews) || Number.isFinite(courseData.expectedReviews);
+		if (courseData.reviewVerification || hasCounts) {
+			const ver = document.createElement('div');
+			ver.className = 'rmg-course-detail';
+			
+			const parts = [];
+			if (courseData.reviewVerification) parts.push(`Verification: ${courseData.reviewVerification}`);
+			if (Number.isFinite(courseData.foundReviews) && Number.isFinite(courseData.expectedReviews)) {
+				parts.push(`Reviews: ${courseData.foundReviews}/${courseData.expectedReviews}`);
+			} else if (Number.isFinite(courseData.foundReviews)) {
+				parts.push(`Reviews found: ${courseData.foundReviews}`);
+			} else if (Number.isFinite(courseData.expectedReviews)) {
+				parts.push(`Reviews expected: ${courseData.expectedReviews}`);
+			}
+			
+			ver.textContent = parts.join(' • ');
+			courseInfo.appendChild(ver);
 		}
 		
 		// Recent reviews
@@ -790,6 +1016,9 @@ function renderCard(anchorNode, record, courseData = null) {
 		card.appendChild(courseInfo);
 	}
 	card.appendChild(meter);
+	if (meta.textContent) {
+		card.appendChild(meta);
+	}
 	actions.appendChild(link);
 	card.appendChild(actions);
 

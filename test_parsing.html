@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>RateMyGaucho Parser Test</title>
+    <style>
+        body { font-family: monospace; margin: 20px; background: #f5f5f5; }
+        .test { background: white; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .pass { border-left: 5px solid #4caf50; }
+        .fail { border-left: 5px solid #f44336; }
+        h2 { color: #003660; }
+        pre { background: #f9f9f9; padding: 10px; overflow-x: auto; }
+        .result { font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>RateMyGaucho Flexible Parser Test</h1>
+    <div id="results"></div>
+
+    <script>
+        // Copy of the parseFlexibleArray function
+        function parseFlexibleArray(raw, { delimiter = '|', type = 'string', reviewSeparator = null } = {}) {
+            if (!raw || String(raw).trim() === '' || String(raw).toLowerCase() === 'no data') return [];
+            const text = String(raw).trim();
+
+            // 1) Try JSON first for backward compatibility
+            if (text.startsWith('[') && text.endsWith(']')) {
+                try {
+                    const parsed = JSON.parse(text);
+                    if (Array.isArray(parsed)) {
+                        return type === 'number' ? parsed.map(v => Number(v)).filter(n => Number.isFinite(n)) : parsed.map(v => String(v));
+                    }
+                } catch (jsonError) {
+                    console.debug('JSON parse failed, trying delimiter parsing:', jsonError.message);
+                }
+            }
+
+            // 2) If a review separator is provided, use that
+            if (reviewSeparator && text.includes(reviewSeparator)) {
+                return text.split(reviewSeparator).map(s => s.trim()).filter(Boolean);
+            }
+
+            // 3) Otherwise, split on delimiter
+            if (delimiter && text.includes(delimiter)) {
+                const parts = text.split(delimiter).map(s => s.trim()).filter(Boolean);
+                return type === 'number' ? parts.map(v => Number(v)).filter(n => Number.isFinite(n)) : parts;
+            }
+
+            // 4) Fallback: single token
+            if (type === 'number') {
+                const num = Number(text);
+                return Number.isFinite(num) ? [num] : [];
+            }
+            return [text];
+        }
+
+        // Test cases
+        const tests = [
+            {
+                name: 'JSON array of strings (legacy format)',
+                input: '["A", "A+"]',
+                options: { type: 'string' },
+                expected: ['A', 'A+']
+            },
+            {
+                name: 'JSON array of numbers (legacy format)',
+                input: '[12, 20, 11, 8]',
+                options: { type: 'number' },
+                expected: [12, 20, 11, 8]
+            },
+            {
+                name: 'Pipe-delimited strings (new format)',
+                input: 'A|A+',
+                options: { delimiter: '|', type: 'string' },
+                expected: ['A', 'A+']
+            },
+            {
+                name: 'Pipe-delimited numbers (new format)',
+                input: '0|0|9|31|59|64',
+                options: { delimiter: '|', type: 'number' },
+                expected: [0, 0, 9, 31, 59, 64]
+            },
+            {
+                name: 'Review separator (|||)',
+                input: 'Great class! ||| Excellent professor! ||| Highly recommend',
+                options: { reviewSeparator: '|||', type: 'string' },
+                expected: ['Great class!', 'Excellent professor!', 'Highly recommend']
+            },
+            {
+                name: 'Empty string',
+                input: '',
+                options: { type: 'string' },
+                expected: []
+            },
+            {
+                name: '"No data" keyword',
+                input: 'No data',
+                options: { type: 'string' },
+                expected: []
+            },
+            {
+                name: 'Empty JSON array (legacy)',
+                input: '[]',
+                options: { type: 'string' },
+                expected: []
+            },
+            {
+                name: 'Single value with no delimiter',
+                input: 'Pass/No Pass',
+                options: { type: 'string' },
+                expected: ['Pass/No Pass']
+            },
+            {
+                name: 'Real final.csv grading trend example',
+                input: 'A|A',
+                options: { delimiter: '|', type: 'string' },
+                expected: ['A', 'A']
+            },
+            {
+                name: 'Real final.csv enrollment trend example',
+                input: '0|0|9|31|59|64|64|124|125|406|392|410|0|0|0|10|35|98|117|122',
+                options: { delimiter: '|', type: 'number' },
+                expected: [0,0,9,31,59,64,64,124,125,406,392,410,0,0,0,10,35,98,117,122]
+            }
+        ];
+
+        // Run tests
+        const resultsDiv = document.getElementById('results');
+        let passed = 0;
+        let failed = 0;
+
+        tests.forEach((test, idx) => {
+            const result = parseFlexibleArray(test.input, test.options);
+            const matches = JSON.stringify(result) === JSON.stringify(test.expected);
+            
+            if (matches) passed++;
+            else failed++;
+
+            const testDiv = document.createElement('div');
+            testDiv.className = `test ${matches ? 'pass' : 'fail'}`;
+            testDiv.innerHTML = `
+                <h3>Test ${idx + 1}: ${test.name}</h3>
+                <div><strong>Input:</strong> <code>${test.input.substring(0, 100)}${test.input.length > 100 ? '...' : ''}</code></div>
+                <div><strong>Options:</strong> <code>${JSON.stringify(test.options)}</code></div>
+                <div><strong>Expected:</strong> <code>${JSON.stringify(test.expected).substring(0, 100)}${JSON.stringify(test.expected).length > 100 ? '...' : ''}</code></div>
+                <div><strong>Got:</strong> <code>${JSON.stringify(result).substring(0, 100)}${JSON.stringify(result).length > 100 ? '...' : ''}</code></div>
+                <div class="result">${matches ? '✅ PASS' : '❌ FAIL'}</div>
+            `;
+            resultsDiv.appendChild(testDiv);
+        });
+
+        // Summary
+        const summary = document.createElement('div');
+        summary.className = 'test';
+        summary.style.background = passed === tests.length ? '#e8f5e9' : '#ffebee';
+        summary.innerHTML = `
+            <h2>Test Summary</h2>
+            <div><strong>Total:</strong> ${tests.length}</div>
+            <div><strong>Passed:</strong> ${passed}</div>
+            <div><strong>Failed:</strong> ${failed}</div>
+            <div class="result">${passed === tests.length ? '✅ ALL TESTS PASSED' : '❌ SOME TESTS FAILED'}</div>
+        `;
+        resultsDiv.insertBefore(summary, resultsDiv.firstChild);
+    </script>
+</body>
+</html>

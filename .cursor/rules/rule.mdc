@@ -12,7 +12,7 @@ These project-specific rules supplement the universal Cursor guidelines for the 
 ### File Organization Standards
 - Maintain the established directory structure: `content/`, `icons/`, `scripts/`, with root-level manifest and data files[1]
 - Keep all content scripts in the `content/` directory with clear separation: `content.js` for logic, `styles.css` for styling, and third-party libraries like `papaparse.min.js`[1]
-- Store data files (`scores.csv`, `ucsb_courses_final_corrected.csv`) in the root directory for easy manifest access[1]
+- Store the unified data file (`courses_all_scraped.csv`) in the root directory for easy manifest access[1]
 - Place build and packaging scripts in the dedicated `scripts/` directory with platform-specific implementations[1]
 - Organize extension icons by size (16px, 48px, 128px) in the `icons/` directory following Chrome Web Store requirements[1]
 
