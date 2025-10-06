@@ -399,6 +399,495 @@ function filterReviewsByInstructor(reviews, matchedInstructor) {
 	return filtered;
 }
 
+const PERSONA_TRAITS = [
+	{
+		key: 'supportive',
+		label: 'Supportive prof',
+		tone: 'positive',
+		includes: ['supportive', 'cares about', 'very helpful', 'super helpful', 'approachable', 'responsive', 'wants you to succeed', 'goes above and beyond', 'office hours'],
+		excludes: ['unsupportive', 'not supportive']
+	},
+	{
+		key: 'lenient',
+		label: 'Easy grading',
+		tone: 'positive',
+		includes: ['easy a', 'easy grader', 'lenient', 'generous with grades', 'grade lightly', 'gives extra credit', 'fair grader', 'grades easy'],
+		excludes: ['not an easy a']
+	},
+	{
+		key: 'workload',
+		label: 'Heavy workload',
+		tone: 'caution',
+		includes: ['heavy workload', 'ton of homework', 'tons of homework', 'lot of homework', 'lots of homework', 'assignments every week', 'weekly homework', 'hours of work', 'time consuming', 'problem sets', 'loads of work']
+	},
+	{
+		key: 'engaging',
+		label: 'Engaging lectures',
+		tone: 'positive',
+		includes: ['engaging', 'interesting lectures', 'fun class', 'great lecturer', 'keeps you engaged', 'passionate', 'energetic'],
+		excludes: ['not engaging']
+	},
+	{
+		key: 'organized',
+		label: 'Well organized',
+		tone: 'positive',
+		includes: ['organized', 'well organized', 'structured', 'clear expectations', 'clear structure', 'organized class'],
+		excludes: ['disorganized', 'unorganized', 'not organized']
+	},
+	{
+		key: 'tough',
+		label: 'Tough grading',
+		tone: 'caution',
+		includes: ['tough grader', 'harsh grader', 'strict grading', 'strict grader', 'grades tough', 'grades hard', 'grading harsh', 'hard grader']
+	},
+	{
+		key: 'discussion',
+		label: 'Discussion heavy',
+		tone: 'neutral',
+		includes: ['discussion based', 'discussion heavy', 'class discussions', 'participation required', 'seminar style', 'conversation based', 'group discussion']
+	}
+];
+
+const VIBE_THEMES = [
+	{ key: 'projects', descriptor: 'project-heavy', keywords: ['project based', 'project-heavy', 'group project', 'projects', 'final project', 'presentations', 'capstone'] },
+	{ key: 'writing', descriptor: 'writing-heavy', keywords: ['essay', 'essays', 'paper', 'papers', 'writing intensive', 'drafts', 'write a lot'] },
+	{ key: 'reading', descriptor: 'reading-intensive', keywords: ['lots of reading', 'heavy reading', 'tons of reading', 'readings every', 'weekly readings', 'chapters', 'articles'] },
+	{ key: 'discussion', descriptor: 'discussion-driven', keywords: ['discussion', 'seminar', 'participation', 'debate', 'conversation'] },
+	{ key: 'collaboration', descriptor: 'collaborative', keywords: ['group work', 'team based', 'collaborate', 'partner up', 'study group'] },
+	{ key: 'practical', descriptor: 'hands-on', keywords: ['hands on', 'lab', 'laboratory', 'experiment', 'practical', 'field work'] }
+];
+
+const EFFORT_KEYWORDS = {
+	heavy: ['heavy workload', 'ton of homework', 'tons of homework', 'lot of homework', 'lots of homework', 'assignments every week', 'weekly homework', 'weekly quizzes', 'problem sets', 'time consuming', 'hours of work', 'study a lot', 'grind', 'intense workload'],
+	light: ['light workload', 'not much work', 'minimal work', 'no homework', 'not a lot of homework', 'manageable workload', 'pretty easy', 'not too bad', 'low effort', 'barely any work', 'chill workload']
+};
+
+const PACE_KEYWORDS = {
+	fast: ['fast pace', 'fast-paced', 'fast paced', 'moves fast', 'very fast', 'super fast', 'rushed', 'rush through', 'speed through', 'cover a lot', 'dense', 'cram'],
+	slow: ['slow pace', 'slow-paced', 'slow paced', 'relaxed pace', 'takes time', 'take it slow', 'laid back', 'slowly', 'not rushed']
+};
+
+const ASSESSMENT_KEYWORDS = {
+	heavy: ['many exams', 'lots of exams', 'tons of exams', 'midterms', 'midterm', 'final exam', 'quizzes every', 'weekly quizzes', 'pop quizzes', 'test every', 'graded strictly', 'curve is tough', 'exams are hard'],
+	light: ['no exams', 'no midterm', 'no final', 'open book', 'open-note', 'take home', 'take-home', 'project instead of exam', 'few exams', 'final optional', 'pass/no pass', 'pass no pass', 'grading lenient']
+};
+
+const SIGNAL_INSIGHTS = [
+	{
+		key: 'attendance',
+		label: 'Attendance graded',
+		icon: '🗓️',
+		tone: 'caution',
+		detail: 'Reviews mention that attendance is tracked or required.',
+		includes: ['attendance is mandatory', 'attendance mandatory', 'attendance required', 'takes attendance', 'taking attendance', 'attendance points', 'attendance grade', 'sign in sheet', 'roll every class', 'attendance is graded'],
+		excludes: ['attendance not mandatory', 'attendance optional', 'attendance not required']
+	},
+	{
+		key: 'extraCredit',
+		label: 'Extra credit offered',
+		icon: '✨',
+		tone: 'positive',
+		detail: 'Students mention extra credit or dropped scores.',
+		includes: ['extra credit', 'extra-credit', 'offers extra credit', 'gave extra credit', 'gives extra credit', 'lots of extra credit', 'drop your lowest', 'drops your lowest', 'drops lowest quiz', 'drops lowest assignment', 'bonus points'],
+		excludes: ['no extra credit', 'without extra credit']
+	},
+	{
+		key: 'flexibility',
+		label: 'Flexible deadlines',
+		icon: '🕒',
+		tone: 'positive',
+		detail: 'Reviews report deadline extensions or lenient late work policies.',
+		includes: ['gives extensions', 'offers extensions', 'deadline extensions', 'flexible with deadlines', 'lenient with deadlines', 'late work accepted', 'turn in late', 'extensions available', 'extension on assignments', 'deadline flexibility'],
+		excludes: ['no extensions', 'does not give extensions', 'doesn\'t give extensions']
+	},
+	{
+		key: 'strictDeadlines',
+		label: 'Zero late work',
+		icon: '🚫📅',
+		tone: 'caution',
+		detail: 'Reviews warn about strict or no-late-work policies.',
+		includes: ['no late work', 'does not accept late work', 'zero late work', 'no make up work', 'no makeups', 'strict deadlines', 'deadline is firm', 'no extensions', 'no late assignments'],
+		excludes: ['late work accepted', 'if you turn in late']
+	}
+];
+
+function derivePersonaInsights(courseData, record) {
+	const reviews = gatherNormalizedReviews(courseData, record);
+	if (!reviews.length) return null;
+
+	const traitChips = computeTraitChips(reviews);
+	const vibeSummary = computeVibeSummary(reviews);
+	const effort = computeEffortInsight(reviews);
+	const pace = computePaceInsight(reviews);
+	const assessment = computeAssessmentInsight(reviews);
+	const signals = computeSignalIcons(reviews);
+
+	if (
+		(!traitChips || traitChips.length === 0) &&
+		!vibeSummary &&
+		!effort &&
+		!pace &&
+		!assessment &&
+		(!signals || signals.length === 0)
+	) {
+		return null;
+	}
+
+	return { traitChips, vibeSummary, effort, pace, assessment, signals };
+}
+
+function gatherNormalizedReviews(courseData, record) {
+	const set = new Set();
+	if (courseData && Array.isArray(courseData.recentReviews)) {
+		for (const review of courseData.recentReviews) {
+			if (!review) continue;
+			const cleaned = String(review).trim();
+			if (cleaned) set.add(cleaned.toLowerCase());
+		}
+	}
+	if (record && Array.isArray(record.reviewSamples)) {
+		for (const review of record.reviewSamples) {
+			if (!review) continue;
+			const cleaned = String(review).trim();
+			if (cleaned) set.add(cleaned.toLowerCase());
+		}
+	}
+	return Array.from(set);
+}
+
+function matchesTrait(review, trait) {
+	if (trait.excludes && trait.excludes.some(ex => review.includes(ex))) {
+		return false;
+	}
+	if (trait.includes && trait.includes.some(inc => review.includes(inc))) {
+		return true;
+	}
+	if (trait.patterns && trait.patterns.some(pattern => pattern.test(review))) {
+		return true;
+	}
+	return false;
+}
+
+function computeTraitChips(reviews) {
+	const reviewCount = reviews.length;
+	const scored = [];
+	for (const trait of PERSONA_TRAITS) {
+		let hits = 0;
+		for (const review of reviews) {
+			if (matchesTrait(review, trait)) hits++;
+		}
+		if (hits > 0) {
+			scored.push({ trait, hits });
+		}
+	}
+	if (!scored.length) return [];
+	scored.sort((a, b) => b.hits - a.hits);
+	const threshold = reviewCount >= 4 ? 2 : 1;
+	const chips = [];
+	for (const item of scored) {
+		if (chips.length >= 3) break;
+		if (item.hits >= threshold || chips.length === 0) {
+			chips.push({ label: item.trait.label, tone: item.trait.tone });
+		}
+	}
+	return chips;
+}
+
+function countKeywordGroup(reviews, keywords, perReviewLimit = 1) {
+	if (!keywords || !keywords.length) return 0;
+	let total = 0;
+	const limit = Number.isFinite(perReviewLimit) && perReviewLimit > 0 ? perReviewLimit : null;
+	for (const review of reviews) {
+		let hits = 0;
+		for (const keyword of keywords) {
+			if (review.includes(keyword)) {
+				hits++;
+				if (limit && hits >= limit) break;
+			}
+		}
+		total += limit ? Math.min(hits, limit) : hits;
+	}
+	return total;
+}
+
+function computeVibeSummary(reviews) {
+	const scored = [];
+	for (const theme of VIBE_THEMES) {
+		const hits = countKeywordGroup(reviews, theme.keywords, 2);
+		if (hits > 0) {
+			scored.push({ theme, hits });
+		}
+	}
+	if (!scored.length) return null;
+	scored.sort((a, b) => b.hits - a.hits);
+	const threshold = reviews.length >= 4 ? 2 : 1;
+	const descriptors = [];
+	for (const item of scored) {
+		if (descriptors.length >= 2) break;
+		if (item.hits >= threshold || descriptors.length === 0) {
+			descriptors.push(item.theme.descriptor);
+		}
+	}
+	if (!descriptors.length) return null;
+	if (descriptors.length === 1) {
+		return `${capitalize(descriptors[0])} vibe.`;
+	}
+	return `${capitalize(descriptors[0])} and ${descriptors[1]} vibe.`;
+}
+function computeEffortInsight(reviews) {
+	const heavy = countKeywordGroup(reviews, EFFORT_KEYWORDS.heavy, 2);
+	const light = countKeywordGroup(reviews, EFFORT_KEYWORDS.light, 2);
+	const total = heavy + light;
+	if (total === 0) return null;
+	const score = clamp01(heavy / total);
+	let label;
+	if (score <= 0.33) label = 'Light effort';
+	else if (score <= 0.66) label = 'Moderate effort';
+	else label = 'Intense effort';
+	return { score, label, detail: `Heavy signals: ${heavy}, Light signals: ${light}` };
+}
+
+function computePaceInsight(reviews) {
+	const fast = countKeywordGroup(reviews, PACE_KEYWORDS.fast, 2);
+	const slow = countKeywordGroup(reviews, PACE_KEYWORDS.slow, 2);
+	const total = fast + slow;
+	if (total === 0) return null;
+	const score = clamp01(fast / total);
+	let label;
+	let shortLabel;
+	let icon;
+	if (score <= 0.33) {
+		label = 'Laid-back pace';
+		shortLabel = 'Chill';
+		icon = '🌿';
+	} else if (score <= 0.66) {
+		label = 'Balanced pace';
+		shortLabel = 'Balanced';
+		icon = '⚖️';
+	} else {
+		label = 'Rapid pace';
+		shortLabel = 'Fast';
+		icon = '⚡️';
+	}
+	return { score, label, shortLabel, icon, detail: `Fast cues: ${fast}, Slow cues: ${slow}` };
+}
+
+function computeAssessmentInsight(reviews) {
+	const heavy = countKeywordGroup(reviews, ASSESSMENT_KEYWORDS.heavy, 2);
+	const light = countKeywordGroup(reviews, ASSESSMENT_KEYWORDS.light, 2);
+	const total = heavy + light;
+	if (total === 0) return null;
+	const score = clamp01(heavy / total);
+	let label;
+	if (score <= 0.33) label = 'Light assessments';
+	else if (score <= 0.66) label = 'Mixed assessments';
+	else label = 'Exam-heavy';
+	let shortLabel;
+	let icon;
+	switch (label) {
+		case 'Light assessments':
+			shortLabel = 'Light';
+			icon = '📗';
+			break;
+		case 'Mixed assessments':
+			shortLabel = 'Mixed';
+			icon = '📝';
+			break;
+		default:
+			shortLabel = 'Exam';
+			icon = '📚';
+	}
+	return { score, label, shortLabel, icon, detail: `Heavy cues: ${heavy}, Light cues: ${light}` };
+}
+
+function matchesSignal(review, signal) {
+	if (!review || !signal) return false;
+	if (signal.excludes && signal.excludes.some(ex => review.includes(ex))) {
+		return false;
+	}
+	if (signal.includes && signal.includes.some(inc => review.includes(inc))) {
+		return true;
+	}
+	if (signal.patterns && signal.patterns.some(pattern => pattern.test(review))) {
+		return true;
+	}
+	return false;
+}
+
+function computeSignalIcons(reviews) {
+	if (!Array.isArray(reviews) || !reviews.length) return [];
+	const scored = [];
+	for (const signal of SIGNAL_INSIGHTS) {
+		let hits = 0;
+		for (const review of reviews) {
+			if (matchesSignal(review, signal)) hits++;
+		}
+		if (hits > 0) {
+			scored.push({ signal, hits });
+		}
+	}
+	if (!scored.length) return [];
+	scored.sort((a, b) => b.hits - a.hits);
+	const maxSignals = 3;
+	const result = [];
+	for (const item of scored) {
+		if (result.length >= maxSignals) break;
+		const minHits = item.signal.minHits || 1;
+		if (item.hits >= minHits || result.length === 0) {
+			result.push({
+				key: item.signal.key,
+				label: item.signal.label,
+				tone: item.signal.tone,
+				icon: item.signal.icon,
+				detail: item.signal.detail
+			});
+		}
+	}
+	return result;
+}
+
+function buildPersonaRail(insights) {
+	if (!insights) return null;
+	const rail = document.createElement('aside');
+	rail.className = 'rmg-card-rail';
+	let contentBlocks = 0;
+
+	if (Array.isArray(insights.traitChips) && insights.traitChips.length) {
+		const title = document.createElement('div');
+		title.className = 'rmg-rail-section-title';
+		title.textContent = 'Noticed in reviews';
+		rail.appendChild(title);
+
+		const chips = document.createElement('div');
+		chips.className = 'rmg-rail-chips';
+		for (const chip of insights.traitChips) {
+			const chipEl = document.createElement('span');
+			chipEl.className = 'rmg-rail-chip';
+			if (chip.tone) chipEl.classList.add(`rmg-rail-chip--${chip.tone}`);
+			chipEl.textContent = chip.label;
+			chips.appendChild(chipEl);
+		}
+		rail.appendChild(chips);
+		contentBlocks++;
+	}
+
+	if (insights.vibeSummary) {
+		const vibe = document.createElement('div');
+		vibe.className = 'rmg-rail-vibe';
+		vibe.textContent = insights.vibeSummary;
+		rail.appendChild(vibe);
+		contentBlocks++;
+	}
+
+	if (insights.effort) {
+		const effort = document.createElement('div');
+		effort.className = 'rmg-rail-effort';
+		const effortTitle = document.createElement('div');
+		effortTitle.className = 'rmg-rail-section-title';
+		effortTitle.textContent = 'Effort';
+		effort.appendChild(effortTitle);
+
+		const bar = document.createElement('div');
+		bar.className = 'rmg-rail-effort-bar';
+		const fill = document.createElement('span');
+		fill.style.setProperty('--effort-fill', `${Math.round(clamp01(insights.effort.score) * 100)}%`);
+		if (insights.effort.detail) fill.title = insights.effort.detail;
+		bar.appendChild(fill);
+		effort.appendChild(bar);
+
+		const label = document.createElement('div');
+		label.className = 'rmg-rail-effort-label';
+		label.textContent = insights.effort.label;
+		effort.appendChild(label);
+
+		rail.appendChild(effort);
+		contentBlocks++;
+	}
+
+	if (Array.isArray(insights.signals) && insights.signals.length) {
+		const signalsWrapper = document.createElement('div');
+		signalsWrapper.className = 'rmg-rail-signals';
+		const signalsTitle = document.createElement('div');
+		signalsTitle.className = 'rmg-rail-section-title';
+		signalsTitle.textContent = 'Signals';
+		signalsWrapper.appendChild(signalsTitle);
+
+		const signalsList = document.createElement('div');
+		signalsList.className = 'rmg-rail-signal-list';
+		for (const signal of insights.signals) {
+			const signalEl = document.createElement('div');
+			signalEl.className = 'rmg-rail-signal';
+			if (signal.tone) signalEl.classList.add(`rmg-rail-signal--${signal.tone}`);
+			if (signal.detail) signalEl.title = signal.detail;
+
+			const icon = document.createElement('span');
+			icon.className = 'rmg-rail-signal-icon';
+			icon.textContent = signal.icon || '•';
+			signalEl.appendChild(icon);
+
+			const label = document.createElement('span');
+			label.className = 'rmg-rail-signal-label';
+			label.textContent = signal.label;
+			signalEl.appendChild(label);
+
+			signalsList.appendChild(signalEl);
+		}
+		signalsWrapper.appendChild(signalsList);
+		rail.appendChild(signalsWrapper);
+		contentBlocks++;
+	}
+
+	const dialCandidates = [];
+	if (insights.pace) dialCandidates.push({ key: 'Pace', ...insights.pace });
+	if (insights.assessment) dialCandidates.push({ key: 'Assessments', ...insights.assessment });
+	if (dialCandidates.length) {
+		const dials = document.createElement('div');
+		dials.className = 'rmg-rail-dials';
+		for (const dialInfo of dialCandidates) {
+			const dial = document.createElement('div');
+			dial.className = 'rmg-rail-dial';
+
+			const heading = document.createElement('div');
+			heading.className = 'rmg-rail-dial-label';
+			heading.textContent = dialInfo.key;
+			dial.appendChild(heading);
+
+			const ring = document.createElement('div');
+			ring.className = 'rmg-rail-dial-ring';
+			ring.style.setProperty('--dial-progress', `${Math.round(clamp01(dialInfo.score) * 100)}%`);
+			if (dialInfo.detail) ring.title = dialInfo.detail;
+
+			const emblem = document.createElement('span');
+			emblem.className = 'rmg-rail-dial-emblem';
+			emblem.textContent = dialInfo.icon || dialInfo.shortLabel || dialInfo.label;
+			ring.appendChild(emblem);
+
+			dial.appendChild(ring);
+
+			const description = document.createElement('div');
+			description.className = 'rmg-rail-dial-desc';
+			description.textContent = dialInfo.label;
+			dial.appendChild(description);
+
+			dials.appendChild(dial);
+		}
+		rail.appendChild(dials);
+		contentBlocks++;
+	}
+
+	if (!contentBlocks) return null;
+	return rail;
+}
+
+function clamp01(value) {
+	return Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0));
+}
+
+function capitalize(text) {
+	if (!text) return '';
+	return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 function pickCourseDataForInstructor(courseRecords, matchedInstructor) {
 	if (!Array.isArray(courseRecords) || courseRecords.length === 0) return null;
 	if (!matchedInstructor) return courseRecords[0];
@@ -826,6 +1315,17 @@ function renderCard(anchorNode, record, courseData = null) {
 	const rating = Number(record.rmpScore || 0);
 	card.className = 'rmg-card ' + (rating >= 4 ? 'rmg-good' : rating >= 3 ? 'rmg-ok' : 'rmg-bad');
 
+	const insights = derivePersonaInsights(courseData, record);
+	const rail = buildPersonaRail(insights);
+	if (rail) {
+		card.appendChild(rail);
+	} else {
+		card.classList.add('rmg-card--no-rail');
+	}
+
+	const main = document.createElement('div');
+	main.className = 'rmg-card-main';
+	card.appendChild(main);
 
 	const badge = document.createElement('span');
 	badge.className = 'rmg-badge';
@@ -834,8 +1334,6 @@ function renderCard(anchorNode, record, courseData = null) {
 		rating >= 4 ? 'rmg-badge--good' : rating >= 3 ? 'rmg-badge--ok' : 'rmg-badge--bad'
 	);
 
-	// Removed title/name display as requested
-
 	const sub = document.createElement('span');
 	sub.className = 'rmg-subtle';
 	const reviewLabel = record.numReviews === 1 ? 'review' : 'reviews';
@@ -843,46 +1341,35 @@ function renderCard(anchorNode, record, courseData = null) {
 
 	const stars = document.createElement('div');
 	stars.className = 'rmg-stars';
-	
-	// Create 5 gaucho star images with precise tenths-based partial fills
 	for (let i = 0; i < 5; i++) {
 		const starContainer = document.createElement('div');
 		starContainer.className = 'rmg-star-container';
-		
-		// Create background (empty) star
+
 		const emptyStar = document.createElement('img');
 		emptyStar.src = chrome.runtime.getURL('gaucho.png');
 		emptyStar.className = 'rmg-star rmg-star--empty';
 		emptyStar.alt = '★';
-		
-		// Create filled star overlay
+
 		const filledStar = document.createElement('img');
 		filledStar.src = chrome.runtime.getURL('gaucho.png');
 		filledStar.className = 'rmg-star rmg-star--filled';
 		filledStar.alt = '★';
-		
-		// Calculate precise fill percentage for this star based on tenths
+
 		const starValue = i + 1;
 		let fillPercentage = 0;
-		
 		if (rating >= starValue) {
-			// Fully filled star
 			fillPercentage = 100;
 		} else if (rating > starValue - 1) {
-			// Partially filled star - calculate exact percentage based on tenths
 			const partialRating = rating - (starValue - 1);
 			fillPercentage = Math.max(0, Math.min(100, partialRating * 100));
 		}
-		
-		// Apply the fill percentage as a CSS custom property
+
 		starContainer.style.setProperty('--fill-percentage', `${fillPercentage}%`);
-		
 		starContainer.appendChild(emptyStar);
 		starContainer.appendChild(filledStar);
 		stars.appendChild(starContainer);
 	}
 
-	// Meta line for any fallback info (e.g., when no course-specific grade data exists)
 	const meta = document.createElement('span');
 	meta.className = 'rmg-meta';
 	const shouldShowFallbackGrade = (
@@ -892,14 +1379,22 @@ function renderCard(anchorNode, record, courseData = null) {
 	);
 	meta.textContent = shouldShowFallbackGrade ? `Grade trend: ${record.gradeSummary.join(' → ')}` : '';
 
-	// Inline meter that fills proportionally to rating
 	const meter = document.createElement('div');
 	meter.className = 'rmg-meter';
 	const bar = document.createElement('span');
 	meter.appendChild(bar);
 
+	const header = document.createElement('div');
+	header.className = 'rmg-card-header';
+
+	const ratingGroup = document.createElement('div');
+	ratingGroup.className = 'rmg-card-rating';
+	ratingGroup.appendChild(badge);
+	ratingGroup.appendChild(stars);
+	header.appendChild(ratingGroup);
+
 	const actions = document.createElement('div');
-	actions.className = 'rmg-actions';
+	actions.className = 'rmg-card-actions';
 
 	const link = document.createElement('a');
 	link.className = 'rmg-link';
@@ -911,35 +1406,36 @@ function renderCard(anchorNode, record, courseData = null) {
 	link.href = record.profileUrl || fallbackCourseUrl;
 	link.textContent = 'View on UCSB Plat';
 
-	// Course data section
+	actions.appendChild(link);
+	header.appendChild(actions);
+	main.appendChild(header);
+	main.appendChild(sub);
+	main.appendChild(meter);
+
 	let courseInfo = null;
 	if (courseData) {
 		courseInfo = document.createElement('div');
 		courseInfo.className = 'rmg-course-info';
-		
-		// Course name
+
 		const courseName = document.createElement('div');
 		courseName.className = 'rmg-course-name';
 		courseName.textContent = courseData.courseName;
 		courseInfo.appendChild(courseName);
-		
-		// Grading basis
+
 		if (courseData.gradingBasis) {
 			const gradingBasis = document.createElement('div');
 			gradingBasis.className = 'rmg-course-detail';
 			gradingBasis.textContent = `Grading: ${courseData.gradingBasis}`;
 			courseInfo.appendChild(gradingBasis);
 		}
-		
-		// Enrollment trend
+
 		if (courseData.enrollmentTrend && courseData.enrollmentTrend.length > 0) {
 			const enrollmentTrend = document.createElement('div');
 			enrollmentTrend.className = 'rmg-course-detail';
 			enrollmentTrend.textContent = `Enrollment: ${courseData.enrollmentTrend.join(' → ')}`;
 			courseInfo.appendChild(enrollmentTrend);
 		}
-		
-		// Platform instructor (from CSV), if provided
+
 		if (courseData.csvProfessor) {
 			const prof = document.createElement('div');
 			prof.className = 'rmg-course-detail';
@@ -947,7 +1443,6 @@ function renderCard(anchorNode, record, courseData = null) {
 			courseInfo.appendChild(prof);
 		}
 
-		// Grade trend positioned directly beneath the professor label when available
 		const gradeTokens = Array.isArray(courseData.gradingTrend) && courseData.gradingTrend.length
 			? courseData.gradingTrend
 			: (Array.isArray(record.gradeSummary) && record.gradeSummary.length ? record.gradeSummary : null);
@@ -957,13 +1452,12 @@ function renderCard(anchorNode, record, courseData = null) {
 			gradeDetail.textContent = `Grade trend: ${gradeTokens.join(' → ')}`;
 			courseInfo.appendChild(gradeDetail);
 		}
-		
-		// Review verification and counts (from CSV), if provided
+
 		const hasCounts = Number.isFinite(courseData.foundReviews) || Number.isFinite(courseData.expectedReviews);
 		if (courseData.reviewVerification || hasCounts) {
 			const ver = document.createElement('div');
 			ver.className = 'rmg-course-detail';
-			
+
 			const parts = [];
 			if (courseData.reviewVerification) parts.push(`Verification: ${courseData.reviewVerification}`);
 			if (Number.isFinite(courseData.foundReviews) && Number.isFinite(courseData.expectedReviews)) {
@@ -973,22 +1467,20 @@ function renderCard(anchorNode, record, courseData = null) {
 			} else if (Number.isFinite(courseData.expectedReviews)) {
 				parts.push(`Reviews expected: ${courseData.expectedReviews}`);
 			}
-			
+
 			ver.textContent = parts.join(' • ');
 			courseInfo.appendChild(ver);
 		}
-		
-		// Recent reviews
+
 		if (courseData.recentReviews && courseData.recentReviews.length > 0) {
 			const reviewsContainer = document.createElement('div');
 			reviewsContainer.className = 'rmg-course-reviews';
-			
+
 			const reviewsTitle = document.createElement('div');
 			reviewsTitle.className = 'rmg-course-reviews-title';
 			reviewsTitle.textContent = 'Recent Reviews:';
 			reviewsContainer.appendChild(reviewsTitle);
-			
-			// Show up to 2 most recent reviews, truncated
+
 			const reviewsToShow = courseData.recentReviews.slice(0, 2);
 			for (const review of reviewsToShow) {
 				const reviewElement = document.createElement('div');
@@ -997,11 +1489,10 @@ function renderCard(anchorNode, record, courseData = null) {
 				reviewElement.textContent = `"${truncatedReview}"`;
 				reviewsContainer.appendChild(reviewElement);
 			}
-			
+
 			courseInfo.appendChild(reviewsContainer);
 		}
-		
-		// Course URL link
+
 		if (courseData.courseUrl) {
 			const courseLink = document.createElement('a');
 			courseLink.className = 'rmg-link rmg-course-link';
@@ -1013,20 +1504,14 @@ function renderCard(anchorNode, record, courseData = null) {
 		}
 	}
 
-	card.appendChild(badge);
-	card.appendChild(stars);
-	card.appendChild(sub);
 	if (courseInfo) {
-		card.appendChild(courseInfo);
+		main.appendChild(courseInfo);
 	}
-	card.appendChild(meter);
-	if (meta.textContent) {
-		card.appendChild(meta);
-	}
-	actions.appendChild(link);
-	card.appendChild(actions);
 
-	// Prefer inserting inside the same table cell to avoid invalid DOM under <tr>
+	if (meta.textContent) {
+		main.appendChild(meta);
+	}
+
 	try {
 		const cell = anchorNode.closest && anchorNode.closest('td,th');
 		if (cell) {
@@ -1035,11 +1520,9 @@ function renderCard(anchorNode, record, courseData = null) {
 			anchorNode.insertAdjacentElement('afterend', card);
 		}
 	} catch (_e) {
-		// Last-resort fallback: append near the anchor's parent
 		(anchorNode.parentElement || document.body).appendChild(card);
 	}
 
-	// Animate meter fill after insertion
 	requestAnimationFrame(() => {
 		const pct = Math.max(0, Math.min(100, (rating / 5) * 100));
 		bar.style.width = pct + '%';

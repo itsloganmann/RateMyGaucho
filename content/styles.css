@@ -1,37 +1,71 @@
 /* Enhanced UCSB-themed card */
 .rmg-card {
-	display: grid;
-	grid-template-columns: auto auto 1fr auto;
-	grid-template-areas:
-		"badge stars sub actions";
-	gap: 6px 8px;
-	align-items: center;
-	padding: 4px 12px;
-	border-radius: 8px;
+	position: relative;
+	display: flex;
+	align-items: stretch;
+	gap: 14px;
+	padding: 12px 18px 12px 22px;
+	border-radius: 10px;
 	background: #fff;
 	border: 1px solid rgba(0,0,0,0.06);
 	box-shadow: 0 2px 6px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-	margin-top: 4px;
-	position: relative;
-	overflow: visible;
+	margin-top: 6px;
 	box-sizing: border-box;
-	min-width: 420px;
-	max-width: 580px;
+	min-width: 460px;
+	max-width: 680px;
+}
+
+.rmg-card--no-rail {
+	padding-left: 18px;
 }
 
 .rmg-card::before {
 	content: "";
 	position: absolute;
-	left: 0; top: 0; bottom: 0;
+	left: 0;
+	top: 0;
+	bottom: 0;
 	width: 4px;
 	background: #003660;
+	border-radius: 10px 0 0 10px;
 }
 
-.rmg-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04); }
+.rmg-card:hover {
+	transform: translateY(-1px);
+	box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+}
 
 @keyframes rmg-pop {
 	0% { transform: translateY(2px); opacity: 0; }
 	100% { transform: translateY(0); opacity: 1; }
+}
+
+.rmg-card-main {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	flex: 1;
+	min-width: 0;
+}
+
+.rmg-card-header {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+.rmg-card-rating {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.rmg-card-actions {
+	margin-left: auto;
+	display: flex;
+	gap: 6px;
+	align-items: center;
 }
 
 .rmg-badge {
@@ -43,12 +77,32 @@
 	font-variant-numeric: tabular-nums;
 	letter-spacing: 0.2px;
 }
-.rmg-badge { grid-area: badge; }
-.rmg-subtle { grid-area: sub; display: block; }
-.rmg-stars { grid-area: stars; }
-.rmg-meter { display: none; }
-.rmg-link { }
-.rmg-actions { grid-area: actions; display: flex; justify-content: flex-end; }
+
+.rmg-subtle {
+	opacity: 0.85;
+	font-size: 12px;
+	white-space: nowrap;
+}
+
+.rmg-meta {
+	opacity: 0.85;
+	font-size: 12px;
+}
+
+.rmg-link {
+	font-weight: 600;
+	color: #ffffff;
+	background: linear-gradient(180deg, #5aa0d7 0%, #2e76b7 100%);
+	border: 1px solid #2a5f8f;
+	padding: 3px 8px;
+	border-radius: 4px;
+	text-decoration: none;
+	font-size: 11px;
+	box-shadow: 0 1px 0 rgba(255,255,255,0.35) inset, 0 1px 0 rgba(0,0,0,0.05);
+	text-align: center;
+	white-space: nowrap;
+}
+.rmg-link:hover { filter: brightness(0.98); }
 
 .rmg-badge--good { background: #d8efe1; color: #1b5e20; }
 .rmg-badge--ok { background: #fff4d6; color: #7a5800; }
@@ -111,12 +165,11 @@
 
 /* Rating meter */
 .rmg-meter {
-	grid-column: 1 / -1;
+	width: 100%;
 	height: 6px;
 	background: #edf2f7;
 	border-radius: 6px;
 	overflow: hidden;
-	margin-top: 2px;
 }
 .rmg-meter > span {
 	display: block;
@@ -133,8 +186,7 @@
 
 /* Course information styling */
 .rmg-course-info {
-	grid-column: 1 / -1;
-	margin-top: 8px;
+	margin-top: 4px;
 	padding: 8px;
 	background: #f8f9fa;
 	border-radius: 6px;
@@ -177,5 +229,208 @@
 
 .rmg-course-link {
 	margin-left: 4px;
+}
+
+/* Persona rail */
+.rmg-card-rail {
+	width: 124px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	background: #f1f5f9;
+	border-radius: 8px;
+	padding: 10px 8px;
+	border: 1px solid rgba(15,23,42,0.08);
+	box-shadow: inset 0 1px 0 rgba(255,255,255,0.55);
+}
+
+.rmg-rail-section-title {
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.6px;
+	font-weight: 700;
+	color: #4a6b8a;
+}
+
+.rmg-rail-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.rmg-rail-chip {
+	font-size: 11px;
+	font-weight: 600;
+	padding: 4px 7px;
+	border-radius: 999px;
+	background: rgba(30,64,175,0.12);
+	color: #1e3a8a;
+}
+.rmg-rail-chip--positive { background: #dcfce7; color: #166534; }
+.rmg-rail-chip--neutral { background: #e2e8f0; color: #334155; }
+.rmg-rail-chip--caution { background: #fef3c7; color: #92400e; }
+
+.rmg-rail-vibe {
+	font-size: 11px;
+	font-style: italic;
+	color: #374151;
+	line-height: 1.35;
+}
+
+.rmg-rail-effort {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 6px;
+}
+
+.rmg-rail-effort-bar {
+	position: relative;
+	width: 14px;
+	height: 64px;
+	border-radius: 8px;
+	background: #e2e8f0;
+	overflow: hidden;
+}
+
+.rmg-rail-effort-bar span {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: var(--effort-fill, 0%);
+	background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+	transition: height 240ms ease;
+}
+
+.rmg-rail-effort-label {
+	font-size: 11px;
+	font-weight: 600;
+	color: #1f2937;
+	text-align: center;
+}
+
+.rmg-rail-dials {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+	justify-content: center;
+}
+
+.rmg-rail-dial {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	text-align: center;
+	min-width: 80px;
+}
+
+.rmg-rail-dial-label {
+	font-size: 10px;
+	font-weight: 700;
+	color: #64748b;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+.rmg-rail-dial-ring {
+	position: relative;
+	width: 52px;
+	height: 52px;
+	border-radius: 50%;
+	background: conic-gradient(#2563eb var(--dial-progress, 0%), #e2e8f0 0);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.rmg-rail-dial-ring::after {
+	content: "";
+	position: absolute;
+	inset: 8px;
+	background: #ffffff;
+	border-radius: 50%;
+	box-shadow: inset 0 1px 2px rgba(0,0,0,0.08);
+	z-index: 0;
+}
+
+.rmg-rail-dial-emblem {
+	position: relative;
+	z-index: 1;
+	font-size: 12px;
+	font-weight: 700;
+	color: #1f2937;
+	text-align: center;
+	max-width: 44px;
+	line-height: 1.1;
+}
+
+.rmg-rail-dial-desc {
+	font-size: 11px;
+	font-weight: 600;
+	color: #1f2937;
+	line-height: 1.2;
+}
+
+.rmg-rail-signals {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.rmg-rail-signal-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.rmg-rail-signal {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 7px;
+	border-radius: 6px;
+	background: rgba(148, 163, 184, 0.18);
+	color: #1f2937;
+	font-size: 11px;
+	font-weight: 600;
+}
+
+.rmg-rail-signal--positive { background: rgba(187, 247, 208, 0.7); color: #166534; }
+.rmg-rail-signal--caution { background: rgba(254, 215, 170, 0.7); color: #92400e; }
+
+.rmg-rail-signal-icon {
+	font-size: 14px;
+	line-height: 1;
+}
+
+.rmg-rail-signal-label {
+	flex: 1;
+}
+
+@media (max-width: 720px) {
+	.rmg-card {
+		flex-direction: column;
+		gap: 10px;
+		min-width: auto;
+		padding: 12px;
+	}
+	.rmg-card::before {
+		display: none;
+	}
+	.rmg-card-rail {
+		width: 100%;
+		flex-direction: row;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 12px;
+	}
+	.rmg-card-main {
+		width: 100%;
+	}
+	.rmg-subtle {
+		white-space: normal;
+	}
 }
 
