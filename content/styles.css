@@ -6,20 +6,20 @@
 	display: flex;
 	align-items: stretch;
 	gap: 14px;
-	padding: 12px 18px 12px 22px;
+	padding: 12px 18px 12px 12px;
 	border-radius: 10px;
 	background: #fff;
 	border: 1px solid rgba(0,0,0,0.06);
 	box-shadow: 0 2px 6px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-	margin: 6px 0 0;
+	margin: 6px 0 0 -30px;
 	box-sizing: border-box;
-	width: clamp(520px, 60vw, 900px);
-	max-width: 900px;
+	width: 100%;
+	max-width: 750px;
 	flex: 0 1 auto;
 }
 
 .rmg-card--no-rail {
-	padding-left: 18px;
+	padding-left: 8px;
 }
 
 .rmg-card::before {
@@ -49,6 +49,7 @@
 	gap: 8px;
 	flex: 1;
 	min-width: 0;
+	padding-right: 0px;
 }
 
 .rmg-card-header {
@@ -56,6 +57,8 @@
 	align-items: center;
 	gap: 12px;
 	flex-wrap: wrap;
+	position: relative;
+	max-width: 450px;
 }
 
 .rmg-card-rating {
@@ -65,7 +68,9 @@
 }
 
 .rmg-card-actions {
-	margin-left: auto;
+	position: absolute;
+	right: -530px;
+	top: 0;
 	display: flex;
 	gap: 6px;
 	align-items: center;
@@ -172,6 +177,9 @@
 	background: #f8f9fa;
 	border-radius: 6px;
 	border: 1px solid rgba(0,0,0,0.08);
+	width: calc(100% + 530px);
+	margin-left: 0;
+	box-sizing: border-box;
 }
 
 .rmg-course-section {
@@ -223,6 +231,10 @@
 	line-height: 1.3;
 	padding-left: 8px;
 	border-left: 2px solid #ddd;
+	max-width: calc(100% + 510px);
+	padding-right: 8px;
+	white-space: normal;
+	word-wrap: break-word;
 }
 
 .rmg-course-link {
@@ -237,9 +249,9 @@
 
 .rmg-grade-bar {
 	display: grid;
-	grid-template-columns: 56px 1fr 48px;
+	grid-template-columns: 56px 150px 1fr;
 	align-items: center;
-	gap: 8px;
+	gap: 12px;
 	font-size: 11px;
 	color: #1f2937;
 }
@@ -269,9 +281,10 @@
 }
 
 .rmg-grade-bar-value {
-	text-align: right;
+	text-align: left;
 	font-variant-numeric: tabular-nums;
 	color: #334155;
+	padding-left: 0;
 }
 
 .rmg-enrollment-chart {
@@ -326,8 +339,8 @@
 	background: rgba(14, 165, 233, 0.18);
 	overflow: hidden;
 	flex: 0 0 auto;
-	width: min(var(--rmg-enrollment-track-width, 540px), 100%);
-	min-width: 110px;
+	width: 150px;
+	min-width: 150px;
 }
 
 .rmg-enrollment-capacity-track {

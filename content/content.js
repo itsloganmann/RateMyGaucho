@@ -1935,8 +1935,6 @@ function renderCard(anchorNode, record, courseData = null) {
 			const chart = document.createElement('div');
 			chart.className = 'rmg-enrollment-chart';
 
-			const baseTrackWidth = 540; // Narrow baseline so bars stay within card bounds
-			const minTrackRatio = 0.2;
 			for (const entry of enrollmentForChart) {
 				const row = document.createElement('div');
 				row.className = 'rmg-enrollment-row';
@@ -1963,13 +1961,6 @@ function renderCard(anchorNode, record, courseData = null) {
 
 				const barWrap = document.createElement('div');
 				barWrap.className = 'rmg-enrollment-bar';
-				let trackWidth = baseTrackWidth;
-				if (maxCapacity && Number.isFinite(entry.capacity) && entry.capacity > 0) {
-					const baseRatio = Math.max(0, Math.min(entry.capacity / maxCapacity, 1));
-					const scaledRatio = baseRatio > 0 ? Math.max(minTrackRatio, baseRatio) : minTrackRatio;
-					trackWidth = baseTrackWidth * scaledRatio;
-				}
-				barWrap.style.setProperty('--rmg-enrollment-track-width', `${Math.max(60, trackWidth)}px`);
 
 				const capacityTrack = document.createElement('span');
 				capacityTrack.className = 'rmg-enrollment-capacity-track';
