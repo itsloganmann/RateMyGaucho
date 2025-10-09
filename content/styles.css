@@ -1,4 +1,6 @@
 /* Enhanced UCSB-themed card */
+
+
 .rmg-card {
 	position: relative;
 	display: flex;
@@ -9,10 +11,11 @@
 	background: #fff;
 	border: 1px solid rgba(0,0,0,0.06);
 	box-shadow: 0 2px 6px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-	margin-top: 6px;
+	margin: 6px 0 0;
 	box-sizing: border-box;
-	min-width: 460px;
-	max-width: 680px;
+	width: clamp(520px, 60vw, 900px);
+	max-width: 900px;
+	flex: 0 1 auto;
 }
 
 .rmg-card--no-rail {
@@ -84,11 +87,6 @@
 	white-space: nowrap;
 }
 
-.rmg-meta {
-	opacity: 0.85;
-	font-size: 12px;
-}
-
 .rmg-link {
 	font-weight: 600;
 	color: #ffffff;
@@ -109,7 +107,6 @@
 .rmg-badge--bad { background: #f8d7da; color: #8a1c1c; }
 
 .rmg-subtle { opacity: 0.85; font-size: 12px; white-space: nowrap; }
-.rmg-meta { opacity: 0.85; font-size: 12px; }
 
 .rmg-link {
 	font-weight: 600;
@@ -163,22 +160,6 @@
 }
 
 
-/* Rating meter */
-.rmg-meter {
-	width: 100%;
-	height: 6px;
-	background: #edf2f7;
-	border-radius: 6px;
-	overflow: hidden;
-}
-.rmg-meter > span {
-	display: block;
-	height: 100%;
-	background: linear-gradient(90deg, #FDB515, #f7a900);
-	width: 0;
-	transition: width 240ms ease;
-}
-
 /* Theme accents by quality */
 .rmg-good::before { background: #c8e6c9; }
 .rmg-ok::before { background: #fff8e1; }
@@ -193,6 +174,13 @@
 	border: 1px solid rgba(0,0,0,0.08);
 }
 
+.rmg-course-section {
+	margin-top: 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
 .rmg-course-name {
 	font-weight: 600;
 	color: #003660;
@@ -204,6 +192,16 @@
 	font-size: 12px;
 	color: #666;
 	margin-bottom: 2px;
+}
+
+.rmg-course-detail--title {
+	font-weight: 600;
+	color: #1f2937;
+	margin-bottom: 0;
+}
+
+.rmg-course-detail--muted {
+	color: #475569;
 }
 
 .rmg-course-reviews {
@@ -229,6 +227,131 @@
 
 .rmg-course-link {
 	margin-left: 4px;
+}
+
+.rmg-grade-chart {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.rmg-grade-bar {
+	display: grid;
+	grid-template-columns: 56px 1fr 48px;
+	align-items: center;
+	gap: 8px;
+	font-size: 11px;
+	color: #1f2937;
+}
+
+.rmg-grade-bar-label {
+	font-weight: 600;
+	text-transform: uppercase;
+	color: #1f2937;
+}
+
+.rmg-grade-bar-track {
+	position: relative;
+	height: 8px;
+	border-radius: 999px;
+	background: rgba(37, 99, 235, 0.15);
+	overflow: hidden;
+}
+
+.rmg-grade-bar-fill {
+	position: absolute;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	border-radius: inherit;
+	background: linear-gradient(90deg, #2563eb, #1e3a8a);
+	width: var(--rmg-grade-fill, 0%);
+}
+
+.rmg-grade-bar-value {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	color: #334155;
+}
+
+.rmg-enrollment-chart {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.rmg-enrollment-row {
+	display: grid;
+	grid-template-columns: minmax(110px, auto) minmax(0, 1fr);
+	align-items: center;
+	gap: 12px;
+	font-size: 11px;
+	color: #1f2937;
+}
+
+.rmg-enrollment-row--full .rmg-enrollment-fill {
+	background: linear-gradient(90deg, #22c55e, #15803d);
+}
+
+.rmg-enrollment-row--over .rmg-enrollment-fill {
+	background: linear-gradient(90deg, #f97316, #b91c1c);
+}
+
+.rmg-enrollment-meta {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.rmg-enrollment-phase {
+	font-weight: 600;
+	color: #0f172a;
+}
+
+.rmg-enrollment-date {
+	font-size: 10px;
+	color: #475569;
+}
+
+.rmg-enrollment-visual {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.rmg-enrollment-bar {
+	position: relative;
+	height: 10px;
+	border-radius: 999px;
+	background: rgba(14, 165, 233, 0.18);
+	overflow: hidden;
+	flex: 0 0 auto;
+	width: min(var(--rmg-enrollment-track-width, 540px), 100%);
+	min-width: 110px;
+}
+
+.rmg-enrollment-capacity-track {
+	display: block;
+	position: relative;
+	width: 100%;
+	height: 100%;
+}
+
+.rmg-enrollment-fill {
+	position: absolute;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	width: var(--rmg-enrollment-fill, 0%);
+	background: linear-gradient(90deg, #0ea5e9, #0284c7);
+}
+
+.rmg-enrollment-capacity {
+	font-variant-numeric: tabular-nums;
+	color: #334155;
+	font-size: 11px;
+	flex-shrink: 0;
+	text-align: right;
 }
 
 /* Persona rail */
@@ -414,7 +537,10 @@
 		flex-direction: column;
 		gap: 10px;
 		min-width: auto;
+		width: 100%;
+		max-width: 100%;
 		padding: 12px;
+		margin: 6px 0 0;
 	}
 	.rmg-card::before {
 		display: none;

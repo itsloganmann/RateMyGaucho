@@ -20,7 +20,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["courses_all_scraped.csv", "gaucho.png"],
+      "resources": ["courses_final_enrollment.csv", "gaucho.png"],
       "matches": ["https://my.sa.ucsb.edu/*"]
     }
   ],

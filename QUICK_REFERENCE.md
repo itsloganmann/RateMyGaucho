@@ -1,6 +1,6 @@
-# Quick Reference Card - final.csv Migration
+# Quick Reference Card – courses_final_enrollment.csv rollout
 
-## ⚡ Fast Track Testing (5 minutes)
+## ⚡ Fast Track Smoke Test (~5 minutes)
 
 ### 1. Load Extension
 ```
@@ -8,149 +8,117 @@ Chrome → chrome://extensions/ → Enable Developer Mode → Load unpacked
 Select: /Users/logan/RateMyGaucho
 ```
 
-### 2. Test It
+### 2. Verify the Loader
 ```
 1. Open DevTools (F12)
-2. Go to: https://my.sa.ucsb.edu/gold/
-3. Search for: "ANTH" or any course
-4. Check console for: "✅ Successfully loaded final.csv"
-5. Check console for: "Parsed 2976 course records"
+2. Visit https://my.sa.ucsb.edu/gold/
+3. Search for any department (e.g., "ANTH")
+4. Confirm console shows: "✅ Unified dataset ready"
+5. Confirm log details include courses_final_enrollment.csv and ~945 course records
 ```
 
-### 3. Verify UI
-- Look for professor rating cards below instructor names
-- New fields should show:
-  - **Professor (PLAT):** [name]
-  - **Verification:** MATCH/MISMATCH/FLAG • **Reviews:** X/Y
+### 3. Spot-check the UI
+- Rating card still renders beneath instructor rows
+- New data points visible:
+  - **Grade distribution** (percentages by letter or Pass/Fail)
+  - **Historic enrollment** grouped by Pass 1/2/3 windows
+  - Mini bar charts mirror the percentages and fill progression for quick scanning
+  - Recent review excerpts (up to two per course)
 
 ---
 
-## 🔍 Console Commands
+## 🔍 Handy Console Commands
 
-### Check if migration worked:
 ```javascript
-// In Chrome DevTools Console:
-window.__rmg_course_lookup.size  // Should be ~950 (course keys)
-```
+// Inspect how many unique courses are indexed
+window.__rmg_course_lookup.size  // expect ~900-950 keys
 
-### Run comprehensive test:
-```javascript
+// Run the built-in review gating diagnostics
 window.testReviewFiltering()
 ```
 
-### Check what CSV was loaded:
-Look for this in console:
+Look for these success logs:
 ```
-[RateMyGaucho] ✅ Successfully loaded final.csv  // ← Good!
-[RateMyGaucho] Parsed 2976 course records        // ← Good!
+[RateMyGaucho] Loading unified dataset: courses_final_enrollment.csv
+[RateMyGaucho] ✅ Unified dataset ready: { courses: 945, instructors: … }
 ```
 
-NOT this:
-```
-[RateMyGaucho] Falling back to legacy...         // ← Bad, see troubleshooting
-[RateMyGaucho] Parsed 2422 course records        // ← Old file loaded
-```
+If you see a legacy fallback message or fewer than 900 course keys, the new CSV did not load—recheck the file.
 
 ---
 
-## 🎯 Quick Test Cases
+## 🎯 Quick Cases to Validate
 
-| Course | Expected Professor | Verification | Reviews |
-|--------|-------------------|--------------|---------|
-| ANTH 3 | Stuart Smith | MISMATCH | 122/6 |
-| ANTH 113 | Emiko Saldivar | MATCH | 9/9 |
-| ANTH 5 | Unknown Professor | ⚠ FLAG | 0/5 |
+| Course        | Instructor (CSV)    | What to Verify                                    |
+|---------------|--------------------|----------------------------------------------------|
+| AM 1          | Lisa Park           | Grade distribution shows A/B percentages           |
+| AM 118        | Alexander Cho       | Historic enrollment highlights Pass 1 fill-up      |
+| ANTH 178      | Amber Vanderwarker  | Enrollment includes Summer 2024 checkpoints        |
+
+Each card should show:
+- Gaucho rating + review count
+- Grade distribution bullet list (percentages)
+- Historic enrollment timeline ordered by pass phases
+- Links to UCSB Plat
 
 ---
 
-## ❌ Troubleshooting
+## ❌ Troubleshooting Cheatsheet
 
-### Issue: Old file loading (2,422 records)
-**Fix:**
+### CSV did not load
 ```bash
-# Check file exists
-ls -lh /Users/logan/RateMyGaucho/final.csv
-
-# Reload extension
-Chrome → Extensions → RateMyGaucho → Reload icon
+ls -lh /Users/logan/RateMyGaucho/courses_final_enrollment.csv  # Confirm file exists
 ```
+- Reload the extension from chrome://extensions/
+- Re-open GOLD and watch the console for fetch/parse errors
 
-### Issue: No new fields showing
-**Reason:** Gating logic - only shows when instructor-specific reviews exist  
-**Try:** Search for "ANTH 3" (has lots of reviews)
+### Grade distribution missing
+- Ensure the card shows `Grade distribution` text; if not, the course may lack data
+- Try a course with rich data (e.g., "AM 1" or "ANTH 113")
 
-### Issue: Parsing errors (raw pipes: "A|A")
-**Fix:**
-```bash
-# Test parser
-open test_parsing.html  # Should show 11/11 tests passed
-```
+### Enrollment timeline empty
+- Historic enrollments only render when the CSV provides timeline entries
+- Verify the raw CSV row has `enrollment_trend` data for that course
 
 ---
 
-## 📊 What Changed?
+## 📊 What This Release Includes
 
-### Data:
-- ✅ 2,422 → 2,976 records (+554)
-- ✅ Added: professor, verification, review counts
-- ✅ Pipe format: `A|A` instead of `["A", "A"]`
-- ✅ Review separator: `|||` instead of JSON array
+### Data
+- Single authoritative dataset: `courses_final_enrollment.csv`
+- Grade distribution stored as `%` per letter (or Pass/Fail)
+- Historic enrollment logs aligned to UCSB pass-time windows
 
-### Code:
-- ✅ `manifest.json`: Added final.csv to web_accessible_resources
-- ✅ `content.js`: New flexible parser + fallback loader
-- ✅ `content.js`: New UI fields for professor/verification
+### Code
+- `manifest.json`: now exposes `courses_final_enrollment.csv`
+- `content/content.js`: new parsing pipeline (grade distributions + pass-time ordering)
+- Persona rail and cards updated to show percentages + historic enrollment phrasing
 
-### Safety:
-- ✅ Backward compatible (falls back to old CSV if needed)
-- ✅ All existing functionality preserved
-- ✅ No git commits/pushes (local only)
-
----
-
-## 🔄 Rollback (if needed)
-
-**Option 1: Automatic (rename file)**
-```bash
-cd /Users/logan/RateMyGaucho
-mv final.csv final.csv.disabled
-# Reload extension - will use old CSV automatically
-```
-
-**Option 2: Manual (revert code)**
-See: `MIGRATION_SUMMARY.md` → "Rollback Plan"
-
----
-
-## 📚 Documentation
-
-- **Detailed info:** `MIGRATION_SUMMARY.md` (comprehensive)
-- **Testing steps:** `TESTING_GUIDE.md` (step-by-step)
-- **Parser tests:** `test_parsing.html` (automated)
-- **This card:** `QUICK_REFERENCE.md` (you are here)
+### Safety
+- Dataset cached once per session, reused across cards
+- If parsing fails, cards stay hidden instead of rendering stale info
 
 ---
 
 ## ✅ Success Checklist
 
-- [ ] Extension loads without errors
-- [ ] Console shows "final.csv" and "2976 records"
-- [ ] New UI fields appear on GOLD course pages
-- [ ] Star ratings still work
-- [ ] Links still work
-- [ ] No JavaScript errors
+- [ ] Console reports `courses_final_enrollment.csv`
+- [ ] Courses ≈ 945 and instructors count reasonable
+- [ ] Grade distribution percentages visible on sampled cards
+- [ ] Historic enrollment strings ordered by pass time
+- [ ] No red errors in DevTools console
 
-**If all checked:** ✅ Migration successful!
-
----
-
-## 🆘 Need Help?
-
-1. Check console logs (F12 → Console tab)
-2. Review `MIGRATION_SUMMARY.md` for known issues
-3. Run `window.testReviewFiltering()` for diagnostics
-4. Test parser with `open test_parsing.html`
+Tick them all → ✅ Rollout complete.
 
 ---
 
-**Quick Start:** Follow steps 1-3 above, then check the success checklist!
+## 🆘 Need a Lifeline?
+
+1. Review DevTools console output for stack traces
+2. Re-run `window.testReviewFiltering()` for quick diagnostics
+3. See `MIGRATION_SUMMARY.md` for deeper context and rollback notes
+4. Use `test_parsing.html` to validate parsing helpers in isolation
+
+---
+
+Keep this card handy during verification passes, and update counts if the dataset is refreshed again.

@@ -76,6 +76,42 @@ let __rmg_data_cache = null;
 let __rmg_data_loading = null;
 let __rmg_course_lookup = null;
 
+const DATASET_FILENAME = 'courses_final_enrollment.csv';
+
+const PASS_TIME_SCHEDULES = {
+	'WINTER 2025': [
+		{ key: 'schedule', label: 'Schedule Posted', start: makeUtcDate(2024, 9, 21), end: makeUtcDate(2024, 9, 21) },
+		{ key: 'pass1', label: 'Pass 1', start: makeUtcDate(2024, 10, 4), end: makeUtcDate(2024, 10, 10) },
+		{ key: 'pass2', label: 'Pass 2', start: makeUtcDate(2024, 10, 12), end: makeUtcDate(2024, 10, 17) },
+		{ key: 'pass3', label: 'Pass 3', start: makeUtcDate(2024, 10, 18), end: makeUtcDate(2025, 2, 14) }
+	],
+	'SPRING 2025': [
+		{ key: 'schedule', label: 'Schedule Posted', start: makeUtcDate(2025, 0, 27), end: makeUtcDate(2025, 0, 27) },
+		{ key: 'pass1', label: 'Pass 1', start: makeUtcDate(2025, 1, 10), end: makeUtcDate(2025, 1, 16) },
+		{ key: 'pass2', label: 'Pass 2', start: makeUtcDate(2025, 1, 24), end: makeUtcDate(2025, 2, 2) },
+		{ key: 'pass3', label: 'Pass 3', start: makeUtcDate(2025, 2, 3), end: makeUtcDate(2025, 5, 6) }
+	],
+	'FALL 2025': [
+		{ key: 'schedule', label: 'Schedule Posted', start: makeUtcDate(2025, 3, 28), end: makeUtcDate(2025, 3, 28) },
+		{ key: 'pass1', label: 'Pass 1', start: makeUtcDate(2025, 4, 12), end: makeUtcDate(2025, 4, 18) },
+		{ key: 'pass2', label: 'Pass 2', start: makeUtcDate(2025, 4, 19), end: makeUtcDate(2025, 8, 3) },
+		{ key: 'pass3', label: 'Pass 3', start: makeUtcDate(2025, 8, 9), end: makeUtcDate(2025, 11, 5) }
+	]
+};
+
+const PASS_PHASE_PRE = { key: 'pre', label: 'Pre-Registration', order: -1 };
+const PASS_PHASE_POST = { key: 'post', label: 'Post Pass 3', order: 6 };
+const PASS_PHASE_FALLBACK = { key: 'timeline', label: 'Enrollment Timeline', order: 999 };
+
+const GRADE_ORDER = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'F', 'PASS', 'S', 'NP', 'U', 'FAIL'];
+
+function gradeSortIndex(label) {
+	const normalized = canonicalizeGradeLabel(label);
+	if (!normalized) return GRADE_ORDER.length + 1;
+	const index = GRADE_ORDER.indexOf(normalized);
+	return index === -1 ? GRADE_ORDER.length : index;
+}
+
 async function ensureRatingsLoaded() {
 	const data = await ensureUnifiedData();
 	return data ? data.ratingsLookup : null;
@@ -92,11 +128,11 @@ async function ensureUnifiedData() {
 
 	__rmg_data_loading = (async () => {
 		try {
-			console.log('[RateMyGaucho] Loading unified dataset: courses_all_scraped.csv');
-			const csvUrl = chrome.runtime.getURL('courses_all_scraped.csv');
+			console.log('[RateMyGaucho] Loading unified dataset:', DATASET_FILENAME);
+			const csvUrl = chrome.runtime.getURL(DATASET_FILENAME);
 			const res = await fetch(csvUrl);
 			if (!res.ok) {
-				console.error('[RateMyGaucho] Failed to fetch courses_all_scraped.csv');
+				console.error('[RateMyGaucho] Failed to fetch', DATASET_FILENAME);
 				return null;
 			}
 			const csvText = await res.text();
@@ -140,13 +176,27 @@ function parseUnifiedCsv(csvText) {
 			const courseName = (row.course_name || '').trim();
 			if (!courseName) continue;
 
+			const courseUrl = (row.course_url || '').trim();
+			const termContext = extractTermFromCourseUrl(courseUrl);
+			const gradeDistribution = parseGradeDistribution(row.grading_trend);
+			const gradeDisplay = gradeDistributionToStrings(gradeDistribution);
+			const gradeStats = computeGradeStats(gradeDistribution);
+			const enrollmentEntries = parseEnrollmentHistory(row.enrollment_trend, termContext);
+			const enrollmentDisplay = enrollmentEntries.map(entry => entry.display);
+
 			const courseRecord = {
 				courseName,
-				courseUrl: (row.course_url || '').trim(),
+				courseUrl,
 				csvProfessor: (row.professor || '').trim(),
 				gradingBasis: '',
-				gradingTrend: parseFlexibleArray(row.grading_trend, { delimiter: '|', type: 'string' }),
-				enrollmentTrend: parseFlexibleArray(normalizeTrend(row.enrollment_trend), { delimiter: '|', type: 'number' }),
+				gradeDistribution,
+				gradeDistributionDisplay: gradeDisplay,
+				gradingTrend: gradeDisplay,
+				gradeStats,
+				historicEnrollment: enrollmentDisplay,
+				enrollmentEntries,
+				enrollmentTrend: enrollmentDisplay,
+				termKey: termContext?.termKey || '',
 				recentReviews: extractReviewsFromRow(row)
 			};
 
@@ -167,7 +217,8 @@ function parseUnifiedCsv(csvText) {
 					lastName,
 					departments: new Set(dept ? [dept] : []),
 					reviews: [],
-					gradeTokens: [],
+					gradeDistributions: [],
+					gradeRatings: [],
 					courseUrls: new Set(),
 					courses: []
 				};
@@ -180,16 +231,20 @@ function parseUnifiedCsv(csvText) {
 			if (Array.isArray(courseRecord.recentReviews) && courseRecord.recentReviews.length) {
 				bucket.reviews.push(...courseRecord.recentReviews);
 			}
-			if (Array.isArray(courseRecord.gradingTrend) && courseRecord.gradingTrend.length) {
-				bucket.gradeTokens.push(...courseRecord.gradingTrend);
+			if (Array.isArray(gradeDistribution) && gradeDistribution.length) {
+				bucket.gradeDistributions.push(gradeDistribution);
+			}
+			if (gradeStats && Number.isFinite(gradeStats.average)) {
+				bucket.gradeRatings.push(gradeStats);
 			}
 		}
 
 		const instructors = [];
 		for (const bucket of instructorAccumulator.values()) {
 			const departments = Array.from(bucket.departments);
-			const gradeSummary = Array.from(new Set(bucket.gradeTokens.map(token => token.toUpperCase())));
-			const rating = computeAggregateRating(bucket.gradeTokens, bucket.reviews.length);
+			const aggregatedDistribution = aggregateGradeDistributions(bucket.gradeDistributions);
+			const gradeSummary = gradeDistributionToStrings(aggregatedDistribution);
+			const rating = computeAggregateRating(bucket.gradeRatings, bucket.reviews.length);
 			const profileUrl = Array.from(bucket.courseUrls).find(Boolean) || '';
 
 			instructors.push({
@@ -213,6 +268,388 @@ function parseUnifiedCsv(csvText) {
 		console.error('[RateMyGaucho] Error parsing unified CSV:', error);
 		return null;
 	}
+}
+
+function extractTermFromCourseUrl(url) {
+	if (!url) return null;
+	try {
+		const decoded = decodeURIComponent(url);
+		const match = decoded.match(/class\/([A-Z]+)\s+(\d{4})/i);
+		if (match) {
+			const season = match[1].toUpperCase();
+			const year = Number(match[2]);
+			if (Number.isFinite(year)) {
+				return { termKey: `${season} ${year}`, season, year };
+			}
+		}
+	} catch (error) {
+		console.debug('[RateMyGaucho] Failed to derive term from course URL:', error);
+	}
+	return null;
+}
+
+function parseGradeDistribution(raw) {
+	const distribution = [];
+	if (!raw && raw !== 0) return distribution;
+	const text = String(raw).trim();
+	if (!text) return distribution;
+	const segments = text.split(',').map(part => part.trim()).filter(Boolean);
+	for (const segment of segments) {
+		const normalized = segment.replace(/\s+/g, ' ').trim();
+		if (!normalized) continue;
+		const match = normalized.match(/^([^:]+):\s*([\d.]+)%$/i) || normalized.match(/^([^:]+)\s+([\d.]+)%$/i);
+		let labelText;
+		let percent = NaN;
+		if (match) {
+			labelText = match[1].trim();
+			percent = Number(match[2]);
+		} else {
+			labelText = normalized;
+		}
+		const label = canonicalizeGradeLabel(labelText);
+		if (!label) continue;
+		distribution.push({
+			label,
+			displayLabel: formatGradeLabelForDisplay(label),
+			percent: Number.isFinite(percent) ? percent : NaN
+		});
+	}
+	return distribution;
+}
+
+function canonicalizeGradeLabel(label) {
+	if (!label && label !== 0) return '';
+	const cleaned = label.toString().trim().toUpperCase().replace(/\s+/g, '');
+	if (!cleaned) return '';
+	if (cleaned === 'PASS' || cleaned === 'P') return 'PASS';
+	if (cleaned === 'FAIL' || cleaned === 'FL') return 'FAIL';
+	if (cleaned === 'NP' || cleaned === 'NOPASS') return 'NP';
+	if (cleaned === 'S' || cleaned === 'SAT') return 'S';
+	if (cleaned === 'U' || cleaned === 'UNSAT') return 'U';
+	const match = cleaned.match(/^([ABCDF])([+-]?)$/);
+	if (match) {
+		return `${match[1]}${match[2] || ''}`;
+	}
+	return cleaned;
+}
+
+function formatGradeLabelForDisplay(label) {
+	switch (label) {
+		case 'PASS':
+			return 'Pass';
+		case 'FAIL':
+			return 'Fail';
+		case 'NP':
+			return 'No Pass';
+		default:
+			return label;
+	}
+}
+
+function gradeDistributionToStrings(distribution) {
+	if (!Array.isArray(distribution) || distribution.length === 0) return [];
+	return distribution
+		.map(formatGradeDistributionEntry)
+		.filter(Boolean);
+}
+
+function formatGradeDistributionEntry(entry) {
+	if (!entry) return '';
+	const label = entry.displayLabel || formatGradeLabelForDisplay(entry.label);
+	if (!label) return '';
+	const percent = Number(entry.percent);
+	if (Number.isFinite(percent)) {
+		const decimals = Math.abs(percent - Math.round(percent)) < 0.05 ? 0 : 1;
+		return `${label} ${percent.toFixed(decimals)}%`;
+	}
+	return label;
+}
+
+function computeGradeStats(distribution) {
+	if (!Array.isArray(distribution) || distribution.length === 0) return null;
+	let totalWeight = 0;
+	let weightedSum = 0;
+	for (const entry of distribution) {
+		if (!entry) continue;
+		const rating = gradeLabelToRating(entry.label);
+		const percent = Number(entry.percent);
+		if (!Number.isFinite(rating) || !Number.isFinite(percent)) continue;
+		totalWeight += percent;
+		weightedSum += percent * rating;
+	}
+	if (totalWeight <= 0) return null;
+	return {
+		average: weightedSum / totalWeight,
+		weight: totalWeight
+	};
+}
+
+function aggregateGradeDistributions(distributionSets) {
+	if (!Array.isArray(distributionSets) || distributionSets.length === 0) return [];
+	const totals = new Map();
+	let contributingSets = 0;
+	for (const set of distributionSets) {
+		if (!Array.isArray(set) || set.length === 0) continue;
+		contributingSets += 1;
+		for (const entry of set) {
+			if (!entry || !entry.label) continue;
+			const percent = Number(entry.percent);
+			if (!Number.isFinite(percent)) continue;
+			totals.set(entry.label, (totals.get(entry.label) || 0) + percent);
+		}
+	}
+	if (contributingSets === 0) return [];
+	const results = Array.from(totals.entries()).map(([label, total]) => ({
+		label,
+		displayLabel: formatGradeLabelForDisplay(label),
+		percent: total / contributingSets
+	}));
+	results.sort((a, b) => Number(b.percent || 0) - Number(a.percent || 0));
+	return results;
+}
+
+function parseEnrollmentHistory(raw, termContext) {
+	const history = [];
+	if (!raw && raw !== 0) return history;
+	const text = String(raw).trim();
+	if (!text) return history;
+	const segments = text.split('|').map(part => part.trim()).filter(Boolean);
+	const schedule = getPassTimeSchedule(termContext?.termKey);
+	let fallbackYear = termContext?.year ?? null;
+	segments.forEach((segment, index) => {
+		const base = parseEnrollmentSegment(segment, termContext, fallbackYear);
+		if (base && Number.isFinite(base.resolvedYear)) {
+			fallbackYear = base.resolvedYear;
+		}
+		const enriched = enrichEnrollmentEntry({ ...base, originalIndex: index }, schedule, termContext);
+		history.push(enriched);
+	});
+	const sorted = history.slice().sort((a, b) => {
+		const orderDiff = (a.phaseOrder ?? PASS_PHASE_FALLBACK.order) - (b.phaseOrder ?? PASS_PHASE_FALLBACK.order);
+		if (orderDiff !== 0) return orderDiff;
+		const timeA = a.date ? a.date.getTime() : Number.MAX_SAFE_INTEGER;
+		const timeB = b.date ? b.date.getTime() : Number.MAX_SAFE_INTEGER;
+		if (timeA !== timeB) return timeA - timeB;
+		return (a.originalIndex ?? 0) - (b.originalIndex ?? 0);
+	});
+	return sorted.map(entry => ({
+		...entry,
+		display: formatEnrollmentDisplay(entry, termContext),
+		displayDate: entry.date ? formatEnrollmentDate(entry.date, termContext) : '',
+		percentFull: Number.isFinite(entry.percentFull) ? Math.max(0, Math.min(entry.percentFull, 150)) : NaN
+	}));
+}
+
+function parseEnrollmentSegment(segment, termContext, fallbackYear) {
+	const raw = segment.trim();
+	if (!raw) {
+		return { raw, detail: raw, date: null, resolvedYear: fallbackYear };
+	}
+	const match = raw.match(/^([A-Za-z]{3}\s+\d{1,2}(?:\s+\d{4})?):\s*(.+)$/);
+	if (!match) {
+		return { raw, detail: raw, date: null, resolvedYear: fallbackYear };
+	}
+	const dateText = match[1];
+	const detail = match[2].trim();
+	const { date, year } = parseEnrollmentDate(dateText, termContext, fallbackYear);
+	let filled = NaN;
+	let capacity = NaN;
+	let remaining = NaN;
+	let percentFull = NaN;
+	const seatMatch = detail.match(/(-?\d+(?:\.\d+)?)\s*\/\s*(-?\d+(?:\.\d+)?)/);
+	if (seatMatch) {
+		filled = Number(seatMatch[1]);
+		capacity = Number(seatMatch[2]);
+		if (Number.isFinite(filled) && Number.isFinite(capacity) && capacity > 0) {
+			percentFull = (filled / capacity) * 100;
+		}
+	}
+	const remainingMatch = detail.match(/\(([-\d]+)\s*(?:remaining|open)\)/i);
+	if (remainingMatch) {
+		remaining = Number(remainingMatch[1]);
+	}
+	if (!Number.isFinite(remaining) && Number.isFinite(capacity) && Number.isFinite(filled)) {
+		remaining = capacity - filled;
+	}
+	return {
+		raw,
+		detail,
+		date,
+		dateText,
+		resolvedYear: year,
+		filled,
+		capacity,
+		remaining,
+		percentFull
+	};
+}
+
+function parseEnrollmentDate(dateText, termContext, fallbackYear) {
+	const tokens = dateText.trim().split(/\s+/);
+	if (tokens.length < 2) return { date: null, year: fallbackYear ?? null };
+	const monthIndex = monthIndexFromName(tokens[0]);
+	if (monthIndex < 0) return { date: null, year: fallbackYear ?? null };
+	const day = parseInt(tokens[1], 10);
+	let year = tokens.length >= 3 ? parseInt(tokens[2], 10) : undefined;
+	if (!Number.isFinite(year)) {
+		const termYear = termContext?.year ?? fallbackYear ?? null;
+		year = resolveYearForTerm(termContext?.season, monthIndex, termYear);
+	}
+	if (!Number.isFinite(year) || !Number.isFinite(day)) {
+		return { date: null, year: fallbackYear ?? year ?? null };
+	}
+	return { date: new Date(Date.UTC(year, monthIndex, day)), year };
+}
+
+function monthIndexFromName(name) {
+	if (!name) return -1;
+	const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+	const idx = months.indexOf(name.toUpperCase().slice(0, 3));
+	return idx;
+}
+
+function resolveYearForTerm(season, monthIndex, termYear) {
+	if (!Number.isFinite(termYear)) return termYear ?? null;
+	if (!season) return termYear;
+	switch (season.toUpperCase()) {
+		case 'WINTER':
+			return monthIndex >= 8 ? termYear - 1 : termYear;
+		default:
+			return termYear;
+	}
+}
+
+function getPassTimeSchedule(termKey) {
+	const schedule = PASS_TIME_SCHEDULES[termKey];
+	if (!Array.isArray(schedule) || schedule.length === 0) return null;
+	return schedule.map((event, index) => ({
+		key: event.key,
+		label: event.label,
+		start: event.start,
+		end: event.end,
+		order: typeof event.order === 'number' ? event.order : index
+	}));
+}
+
+function categorizeEnrollmentPhase(date, schedule) {
+	if (!date || !Array.isArray(schedule) || schedule.length === 0) return PASS_PHASE_FALLBACK;
+	const first = schedule[0];
+	const last = schedule[schedule.length - 1];
+	if (date < first.start) return PASS_PHASE_PRE;
+	if (date > last.end) {
+		return { key: PASS_PHASE_POST.key, label: PASS_PHASE_POST.label, order: last.order + 1 };
+	}
+	for (const event of schedule) {
+		if (date >= event.start && date <= event.end) return event;
+		if (date < event.start) return event;
+	}
+	return PASS_PHASE_FALLBACK;
+}
+
+function enrichEnrollmentEntry(entry, schedule, termContext) {
+	if (!entry) return { phaseKey: PASS_PHASE_FALLBACK.key, phaseLabel: PASS_PHASE_FALLBACK.label, phaseOrder: PASS_PHASE_FALLBACK.order };
+	if (!entry.date || !schedule) {
+		return { ...entry, phaseKey: PASS_PHASE_FALLBACK.key, phaseLabel: PASS_PHASE_FALLBACK.label, phaseOrder: PASS_PHASE_FALLBACK.order };
+	}
+	const phase = categorizeEnrollmentPhase(entry.date, schedule);
+	return {
+		...entry,
+		phaseKey: phase.key,
+		phaseLabel: phase.label,
+		phaseOrder: phase.order
+	};
+}
+
+function formatEnrollmentDisplay(entry, termContext) {
+	if (!entry) return '';
+	if (!entry.date) {
+		return entry.detail || entry.raw || '';
+	}
+	const phase = entry.phaseLabel || 'Enrollment';
+	const dateText = formatEnrollmentDate(entry.date, termContext);
+	const detail = entry.detail || '';
+	return `${phase} (${dateText}): ${detail}`;
+}
+
+function formatEnrollmentDate(date, termContext) {
+	const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+	const monthName = months[date.getUTCMonth()] || '';
+	const day = date.getUTCDate();
+	const baseYear = termContext?.year;
+	const includeYear = !Number.isFinite(baseYear) || date.getUTCFullYear() !== baseYear;
+	return includeYear ? `${monthName} ${day} ${date.getUTCFullYear()}` : `${monthName} ${day}`;
+}
+
+function normalizeGradeSample(sample) {
+	if (sample == null) return null;
+	if (typeof sample === 'object' && sample.label) {
+		return {
+			label: canonicalizeGradeLabel(sample.label),
+			percent: Number(sample.percent)
+		};
+	}
+	if (typeof sample === 'string') {
+		const text = sample.trim();
+		if (!text) return null;
+		const match = text.match(/^([^:]+):\s*([\d.]+)%$/i) || text.match(/^([^:]+)\s+([\d.]+)%$/i);
+		let labelText = text;
+		let percent = NaN;
+		if (match) {
+			labelText = match[1].trim();
+			percent = Number(match[2]);
+		}
+		return {
+			label: canonicalizeGradeLabel(labelText),
+			percent
+		};
+	}
+	return null;
+}
+
+function gradeLabelToRating(label) {
+	if (!label && label !== 0) return NaN;
+	const normalized = canonicalizeGradeLabel(label);
+	if (!normalized) return NaN;
+	switch (normalized) {
+		case 'PASS':
+			return 4.5;
+		case 'FAIL':
+		case 'NP':
+		case 'U':
+			return 1.5;
+		case 'S':
+			return 4.0;
+	}
+	const match = normalized.match(/^([ABCDF])([+-]?)$/);
+	if (!match) return NaN;
+	let base;
+	switch (match[1]) {
+		case 'A':
+			base = 5;
+			break;
+		case 'B':
+			base = 4;
+			break;
+		case 'C':
+			base = 3;
+			break;
+		case 'D':
+			base = 2;
+			break;
+		case 'F':
+			base = 1.2;
+			break;
+		default:
+			base = 3;
+	}
+	const modifier = match[2] || '';
+	if (modifier === '+') base = Math.min(5, base + 0.2);
+	else if (modifier === '-') base = Math.max(1, base - 0.2);
+	return base;
+}
+
+function makeUtcDate(year, monthIndex, day) {
+	return new Date(Date.UTC(year, monthIndex, day));
 }
 
 function normalizeTrend(raw) {
@@ -247,12 +684,32 @@ function extractDepartmentFromCourse(courseName) {
 	return match ? match[1] : '';
 }
 
-function computeAggregateRating(gradeTokens, reviewCount) {
-	if (Array.isArray(gradeTokens) && gradeTokens.length) {
-		const values = gradeTokens.map(gradeTokenToRating).filter(Number.isFinite);
-		if (values.length) {
-			const avg = values.reduce((sum, value) => sum + value, 0) / values.length;
-			return Number(avg.toFixed(1));
+function computeAggregateRating(gradeSamples, reviewCount) {
+	if (Array.isArray(gradeSamples) && gradeSamples.length) {
+		let totalWeight = 0;
+		let weightedSum = 0;
+		for (const sample of gradeSamples) {
+			if (sample == null) continue;
+			if (typeof sample === 'object') {
+				const value = Number(sample.average ?? sample.value ?? sample.rating);
+				const weightRaw = Number(sample.weight ?? sample.totalWeight ?? sample.count ?? sample.percent);
+				if (Number.isFinite(value)) {
+					const weight = Number.isFinite(weightRaw) && weightRaw > 0 ? weightRaw : 1;
+					totalWeight += weight;
+					weightedSum += value * weight;
+					continue;
+				}
+			}
+			const normalized = normalizeGradeSample(sample);
+			if (!normalized || !normalized.label) continue;
+			const rating = gradeLabelToRating(normalized.label);
+			if (!Number.isFinite(rating)) continue;
+			const weight = Number.isFinite(normalized.percent) && normalized.percent > 0 ? normalized.percent : 1;
+			totalWeight += weight;
+			weightedSum += rating * weight;
+		}
+		if (totalWeight > 0) {
+			return Number((weightedSum / totalWeight).toFixed(1));
 		}
 	}
 
@@ -262,36 +719,6 @@ function computeAggregateRating(gradeTokens, reviewCount) {
 	}
 
 	return 3.0;
-}
-
-function gradeTokenToRating(token) {
-	if (!token) return NaN;
-	const normalized = token.toString().trim().toUpperCase();
-	if (!normalized) return NaN;
-	let base;
-	switch (normalized[0]) {
-		case 'A':
-			base = 5;
-			break;
-		case 'B':
-			base = 4;
-			break;
-		case 'C':
-			base = 3;
-			break;
-		case 'D':
-			base = 2;
-			break;
-		case 'F':
-			base = 1.2;
-			break;
-		default:
-			base = 3;
-	}
-
-	if (normalized.includes('+') && base < 5) base += 0.2;
-	if (normalized.includes('-') && base > 1) base -= 0.2;
-	return Math.max(1, Math.min(5, base));
 }
 
 function loadSettings() {
@@ -1315,6 +1742,12 @@ function renderCard(anchorNode, record, courseData = null) {
 	const rating = Number(record.rmpScore || 0);
 	card.className = 'rmg-card ' + (rating >= 4 ? 'rmg-good' : rating >= 3 ? 'rmg-ok' : 'rmg-bad');
 
+	const formatPercent = (value) => {
+		if (!Number.isFinite(value)) return '';
+		const decimals = Math.abs(value - Math.round(value)) < 0.1 ? 0 : 1;
+		return `${value.toFixed(decimals)}%`;
+	};
+
 	const insights = derivePersonaInsights(courseData, record);
 	const rail = buildPersonaRail(insights);
 	if (rail) {
@@ -1370,20 +1803,6 @@ function renderCard(anchorNode, record, courseData = null) {
 		stars.appendChild(starContainer);
 	}
 
-	const meta = document.createElement('span');
-	meta.className = 'rmg-meta';
-	const shouldShowFallbackGrade = (
-		(!courseData || !Array.isArray(courseData.gradingTrend) || courseData.gradingTrend.length === 0) &&
-		Array.isArray(record.gradeSummary) &&
-		record.gradeSummary.length > 0
-	);
-	meta.textContent = shouldShowFallbackGrade ? `Grade trend: ${record.gradeSummary.join(' → ')}` : '';
-
-	const meter = document.createElement('div');
-	meter.className = 'rmg-meter';
-	const bar = document.createElement('span');
-	meter.appendChild(bar);
-
 	const header = document.createElement('div');
 	header.className = 'rmg-card-header';
 
@@ -1410,7 +1829,6 @@ function renderCard(anchorNode, record, courseData = null) {
 	header.appendChild(actions);
 	main.appendChild(header);
 	main.appendChild(sub);
-	main.appendChild(meter);
 
 	let courseInfo = null;
 	if (courseData) {
@@ -1429,13 +1847,6 @@ function renderCard(anchorNode, record, courseData = null) {
 			courseInfo.appendChild(gradingBasis);
 		}
 
-		if (courseData.enrollmentTrend && courseData.enrollmentTrend.length > 0) {
-			const enrollmentTrend = document.createElement('div');
-			enrollmentTrend.className = 'rmg-course-detail';
-			enrollmentTrend.textContent = `Enrollment: ${courseData.enrollmentTrend.join(' → ')}`;
-			courseInfo.appendChild(enrollmentTrend);
-		}
-
 		if (courseData.csvProfessor) {
 			const prof = document.createElement('div');
 			prof.className = 'rmg-course-detail';
@@ -1443,14 +1854,149 @@ function renderCard(anchorNode, record, courseData = null) {
 			courseInfo.appendChild(prof);
 		}
 
-		const gradeTokens = Array.isArray(courseData.gradingTrend) && courseData.gradingTrend.length
-			? courseData.gradingTrend
-			: (Array.isArray(record.gradeSummary) && record.gradeSummary.length ? record.gradeSummary : null);
-		if (gradeTokens && gradeTokens.length) {
-			const gradeDetail = document.createElement('div');
-			gradeDetail.className = 'rmg-course-detail';
-			gradeDetail.textContent = `Grade trend: ${gradeTokens.join(' → ')}`;
-			courseInfo.appendChild(gradeDetail);
+		const gradeDistribution = Array.isArray(courseData.gradeDistribution)
+			? courseData.gradeDistribution.filter(entry => entry && Number.isFinite(entry.percent))
+			: [];
+		const gradeSummaryStrings = Array.isArray(courseData.gradeDistributionDisplay) && courseData.gradeDistributionDisplay.length
+			? courseData.gradeDistributionDisplay
+			: (Array.isArray(courseData.gradingTrend) && courseData.gradingTrend.length
+				? courseData.gradingTrend
+				: (Array.isArray(record.gradeSummary) && record.gradeSummary.length ? record.gradeSummary : []));
+		const gradeHasPercents = gradeDistribution.length > 0;
+		if (gradeHasPercents || gradeSummaryStrings.length) {
+			const gradeSection = document.createElement('div');
+			gradeSection.className = 'rmg-course-section';
+
+			const gradeTitle = document.createElement('div');
+			gradeTitle.className = 'rmg-course-detail rmg-course-detail--title';
+			gradeTitle.textContent = 'Grade distribution';
+			gradeSection.appendChild(gradeTitle);
+
+			if (gradeHasPercents) {
+				const gradeChart = document.createElement('div');
+				gradeChart.className = 'rmg-grade-chart';
+				const sortedGrades = gradeDistribution.slice().sort((a, b) => gradeSortIndex(a.label) - gradeSortIndex(b.label));
+				for (const entry of sortedGrades) {
+					const percent = Number(entry.percent);
+					if (!Number.isFinite(percent)) continue;
+					const row = document.createElement('div');
+					row.className = 'rmg-grade-bar';
+
+					const label = document.createElement('span');
+					label.className = 'rmg-grade-bar-label';
+					label.textContent = entry.displayLabel || entry.label;
+					row.appendChild(label);
+
+					const track = document.createElement('div');
+					track.className = 'rmg-grade-bar-track';
+					const fill = document.createElement('span');
+					fill.className = 'rmg-grade-bar-fill';
+					const clampedPercent = Math.max(0, Math.min(percent, 100));
+					fill.style.setProperty('--rmg-grade-fill', `${clampedPercent}%`);
+					fill.title = `${label.textContent} ${formatPercent(percent)}`;
+					track.appendChild(fill);
+					row.appendChild(track);
+
+					const value = document.createElement('span');
+					value.className = 'rmg-grade-bar-value';
+					value.textContent = formatPercent(percent);
+					row.appendChild(value);
+
+					gradeChart.appendChild(row);
+				}
+				gradeSection.appendChild(gradeChart);
+			}
+
+			if (!gradeHasPercents && gradeSummaryStrings.length) {
+				const gradeSummary = document.createElement('div');
+				gradeSummary.className = 'rmg-course-detail rmg-course-detail--muted';
+				gradeSummary.textContent = gradeSummaryStrings.join(' • ');
+				gradeSection.appendChild(gradeSummary);
+			}
+
+			courseInfo.appendChild(gradeSection);
+		}
+
+		const enrollmentEntries = Array.isArray(courseData.enrollmentEntries) ? courseData.enrollmentEntries : [];
+		const enrollmentForChart = enrollmentEntries.slice(-8);
+		const capacities = enrollmentForChart
+			.map(entry => Number(entry?.capacity))
+			.filter(capacity => Number.isFinite(capacity) && capacity > 0);
+		const maxCapacity = capacities.length ? Math.max(...capacities) : null;
+		if (enrollmentForChart.length) {
+			const enrollmentSection = document.createElement('div');
+			enrollmentSection.className = 'rmg-course-section';
+
+			const enrollmentTitle = document.createElement('div');
+			enrollmentTitle.className = 'rmg-course-detail rmg-course-detail--title';
+			enrollmentTitle.textContent = 'Historic enrollment';
+			enrollmentSection.appendChild(enrollmentTitle);
+
+			const chart = document.createElement('div');
+			chart.className = 'rmg-enrollment-chart';
+
+			const baseTrackWidth = 540; // Narrow baseline so bars stay within card bounds
+			const minTrackRatio = 0.2;
+			for (const entry of enrollmentForChart) {
+				const row = document.createElement('div');
+				row.className = 'rmg-enrollment-row';
+				if (Number.isFinite(entry.percentFull) && entry.percentFull >= 99) {
+					row.classList.add('rmg-enrollment-row--full');
+				}
+				if (Number.isFinite(entry.percentFull) && entry.percentFull > 100) {
+					row.classList.add('rmg-enrollment-row--over');
+				}
+
+				const metaWrap = document.createElement('div');
+				metaWrap.className = 'rmg-enrollment-meta';
+				const phase = document.createElement('div');
+				phase.className = 'rmg-enrollment-phase';
+				phase.textContent = entry.phaseLabel || entry.phaseKey || 'Timeline';
+				metaWrap.appendChild(phase);
+				if (entry.displayDate) {
+					const date = document.createElement('div');
+					date.className = 'rmg-enrollment-date';
+					date.textContent = entry.displayDate;
+					metaWrap.appendChild(date);
+				}
+				row.appendChild(metaWrap);
+
+				const barWrap = document.createElement('div');
+				barWrap.className = 'rmg-enrollment-bar';
+				let trackWidth = baseTrackWidth;
+				if (maxCapacity && Number.isFinite(entry.capacity) && entry.capacity > 0) {
+					const baseRatio = Math.max(0, Math.min(entry.capacity / maxCapacity, 1));
+					const scaledRatio = baseRatio > 0 ? Math.max(minTrackRatio, baseRatio) : minTrackRatio;
+					trackWidth = baseTrackWidth * scaledRatio;
+				}
+				barWrap.style.setProperty('--rmg-enrollment-track-width', `${Math.max(60, trackWidth)}px`);
+
+				const capacityTrack = document.createElement('span');
+				capacityTrack.className = 'rmg-enrollment-capacity-track';
+				barWrap.appendChild(capacityTrack);
+
+				const fill = document.createElement('span');
+				fill.className = 'rmg-enrollment-fill';
+				const percentFull = Number.isFinite(entry.percentFull) ? Math.max(0, Math.min(entry.percentFull, 110)) : 0;
+				fill.style.setProperty('--rmg-enrollment-fill', `${Math.min(percentFull, 100)}%`);
+				fill.title = entry.display || entry.detail || '';
+				capacityTrack.appendChild(fill);
+
+				const detail = document.createElement('div');
+				detail.className = 'rmg-enrollment-capacity';
+				detail.textContent = entry.detail || '';
+
+				const visualRow = document.createElement('div');
+				visualRow.className = 'rmg-enrollment-visual';
+				visualRow.appendChild(barWrap);
+				visualRow.appendChild(detail);
+				row.appendChild(visualRow);
+
+				chart.appendChild(row);
+			}
+
+			enrollmentSection.appendChild(chart);
+			courseInfo.appendChild(enrollmentSection);
 		}
 
 		const hasCounts = Number.isFinite(courseData.foundReviews) || Number.isFinite(courseData.expectedReviews);
@@ -1508,13 +2054,17 @@ function renderCard(anchorNode, record, courseData = null) {
 		main.appendChild(courseInfo);
 	}
 
-	if (meta.textContent) {
-		main.appendChild(meta);
-	}
-
 	try {
 		const cell = anchorNode.closest && anchorNode.closest('td,th');
 		if (cell) {
+			cell.style.minWidth = '960px';
+			cell.style.width = 'auto';
+			cell.style.maxWidth = 'none';
+			cell.style.paddingRight = '12px';
+			cell.style.paddingLeft = '12px';
+			cell.style.textAlign = 'left';
+			cell.style.verticalAlign = 'top';
+			cell.style.display = 'block';
 			cell.appendChild(card);
 		} else {
 			anchorNode.insertAdjacentElement('afterend', card);
@@ -1523,10 +2073,6 @@ function renderCard(anchorNode, record, courseData = null) {
 		(anchorNode.parentElement || document.body).appendChild(card);
 	}
 
-	requestAnimationFrame(() => {
-		const pct = Math.max(0, Math.min(100, (rating / 5) * 100));
-		bar.style.width = pct + '%';
-	});
 }
 
 function extractCourseCode(instructorNode) {

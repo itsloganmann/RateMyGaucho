@@ -37,6 +37,6 @@ This will create a `RateMyGaucho.zip` file in the `dist/` directory.
 ## Development Conventions
 
 *   **Code Style:** The JavaScript code follows a functional programming style with a focus on asynchronous operations. The code is well-commented and includes debug logging for troubleshooting.
-*   **Data Management:** The extension now relies on a single packaged dataset, `courses_all_scraped.csv`, which contains both instructor and course information used throughout the UI.
+*   **Data Management:** The extension now relies on a single packaged dataset, `courses_final_enrollment.csv`, which contains both instructor and course information used throughout the UI.
 *   **Testing:** The project includes a `REVIEWS_FIX_TEST.md` file, which suggests a manual testing process for bug fixes. There is no formal automated testing framework in place.
 *   **Documentation:** The project is well-documented, with a detailed `README.md`, a technical specification in `SPEC_RateMyGaucho_Extension.md`, and a privacy policy in `privacy.md`.

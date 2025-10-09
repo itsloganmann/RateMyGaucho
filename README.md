@@ -6,9 +6,10 @@ RateMyGaucho enhances UCSB GOLD by showing professor ratings and course data dir
 
 ## Novel Features
 
-*   **Offline & Private**: Works without an internet connection and never sends your data to external servers. All data lives in a single packaged CSV (`courses_all_scraped.csv`).
+*   **Offline & Private**: Works without an internet connection and never sends your data to external servers. All data lives in a single packaged CSV (`courses_final_enrollment.csv`).
 *   **Gaucho-Themed Ratings**: Displays professor ratings with custom, partially-filled Gaucho star icons for at-a-glance assessments.
 *   **In-Depth Course Data**: Goes beyond professor ratings to show course-specific details like grading trends, enrollment history, and recent student reviews.
+*   **Visual Summaries**: Inline bar charts translate grade distributions and historic enrollment snapshots into easy-to-interpret visuals.
 *   **Smart Review Filtering**: Intelligently filters reviews to show only those relevant to the specific instructor, providing more accurate insights.
 *   **UCSB Plat Integration**: Provides direct links to professor profiles and curriculum pages on UCSB Plat.
 
@@ -29,7 +30,7 @@ The build script bundles the unified dataset and content script into `dist/RateM
 
 ## Data Source
 
-The extension ships with `courses_all_scraped.csv` as its only data source. Every rating, review, and course record comes from this file, ensuring consistent results across the UI. When updating data, replace this CSV and rebuild the package.
+The extension ships with `courses_final_enrollment.csv` as its only data source. Every rating, review, and course record comes from this file, ensuring consistent results across the UI. When updating data, replace this CSV and rebuild the package.
 
 ## Contributing
 
