@@ -473,7 +473,7 @@ function parseScheduleFromDOM() {
 		
 		// Extract day/time information
 		// Patterns: "MWF 10:00-10:50", "TR 2:00-3:15", "M W 9:00 AM - 9:50 AM"
-		const timePattern = /([MTWRF]+)\s+(\d{1,2}):(\d{2})\s*(?:AM|PM)?\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM)?/i;
+		const timePattern = /([MTWRF]+)\s+(\d{1,2}):(\d{2})\s*(AM|PM)?\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM)?/i;
 		const timeMatch = text.match(timePattern);
 		
 		if (timeMatch) {
@@ -482,16 +482,22 @@ function parseScheduleFromDOM() {
 			
 			let startHour = parseInt(timeMatch[2], 10);
 			const startMin = parseInt(timeMatch[3], 10);
-			let endHour = parseInt(timeMatch[4], 10);
-			const endMin = parseInt(timeMatch[5], 10);
-			const ampm = timeMatch[6] || '';
+			const startAmPm = (timeMatch[4] || '').toLowerCase();
+			let endHour = parseInt(timeMatch[5], 10);
+			const endMin = parseInt(timeMatch[6], 10);
+			const endAmPm = (timeMatch[7] || startAmPm).toLowerCase(); // Use end AM/PM or fall back to start
 			
 			// Convert to 24-hour format
-			if (ampm.toLowerCase() === 'pm' && endHour < 12) {
+			if (startAmPm === 'pm' && startHour < 12) {
 				startHour += 12;
-				endHour += 12;
-			} else if (ampm.toLowerCase() === 'am' && startHour === 12) {
+			} else if (startAmPm === 'am' && startHour === 12) {
 				startHour = 0;
+			}
+			
+			if (endAmPm === 'pm' && endHour < 12) {
+				endHour += 12;
+			} else if (endAmPm === 'am' && endHour === 12) {
+				endHour = 0;
 			}
 			
 			const startMinutes = startHour * 60 + startMin;
@@ -564,7 +570,7 @@ function scanAndFlagConflicts() {
 		const text = (row.textContent || '').trim();
 		
 		// Extract day/time from this row
-		const timePattern = /([MTWRF]+)\s+(\d{1,2}):(\d{2})\s*(?:AM|PM)?\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM)?/i;
+		const timePattern = /([MTWRF]+)\s+(\d{1,2}):(\d{2})\s*(AM|PM)?\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM)?/i;
 		const timeMatch = text.match(timePattern);
 		
 		if (!timeMatch) continue;
@@ -574,15 +580,21 @@ function scanAndFlagConflicts() {
 		
 		let startHour = parseInt(timeMatch[2], 10);
 		const startMin = parseInt(timeMatch[3], 10);
-		let endHour = parseInt(timeMatch[4], 10);
-		const endMin = parseInt(timeMatch[5], 10);
-		const ampm = timeMatch[6] || '';
+		const startAmPm = (timeMatch[4] || '').toLowerCase();
+		let endHour = parseInt(timeMatch[5], 10);
+		const endMin = parseInt(timeMatch[6], 10);
+		const endAmPm = (timeMatch[7] || startAmPm).toLowerCase();
 		
-		if (ampm.toLowerCase() === 'pm' && endHour < 12) {
+		if (startAmPm === 'pm' && startHour < 12) {
 			startHour += 12;
-			endHour += 12;
-		} else if (ampm.toLowerCase() === 'am' && startHour === 12) {
+		} else if (startAmPm === 'am' && startHour === 12) {
 			startHour = 0;
+		}
+		
+		if (endAmPm === 'pm' && endHour < 12) {
+			endHour += 12;
+		} else if (endAmPm === 'am' && endHour === 12) {
+			endHour = 0;
 		}
 		
 		const startMinutes = startHour * 60 + startMin;
@@ -597,7 +609,7 @@ function scanAndFlagConflicts() {
 			// Add conflict badge
 			const badge = document.createElement('span');
 			badge.className = 'rmg-conflict-badge';
-			badge.textContent = `⚠️ Conflicts with ${result.conflictsWith.join(', ')}`;
+			badge.textContent = `Conflicts with ${result.conflictsWith.join(', ')}`;
 			badge.title = 'This course time conflicts with your current schedule';
 			
 			// Insert badge at the beginning of the row
@@ -800,6 +812,7 @@ function parseNaturalQuery(queryText) {
 		'tue': 'T',
 		'wed': 'W',
 		'thu': 'R',
+		'thur': 'R',
 		'fri': 'F',
 		'mw': ['M', 'W'],
 		'tr': ['T', 'R'],
@@ -826,17 +839,21 @@ function parseNaturalQuery(queryText) {
 	}
 	
 	// Extract specific times
-	const afterMatch = query.match(/after\s+(\d{1,2})\s*(?:pm|am)?/);
+	const afterMatch = query.match(/after\s+(\d{1,2})\s*(pm|am)?/);
 	if (afterMatch) {
 		let hour = parseInt(afterMatch[1], 10);
-		if (query.includes('pm') && hour < 12) hour += 12;
+		const ampm = afterMatch[2] || '';
+		if (ampm === 'pm' && hour < 12) hour += 12;
+		else if (ampm === 'am' && hour === 12) hour = 0;
 		result.timeRange.start = hour * 60;
 	}
 	
-	const beforeMatch = query.match(/before\s+(\d{1,2})\s*(?:pm|am)?/);
+	const beforeMatch = query.match(/before\s+(\d{1,2})\s*(pm|am)?/);
 	if (beforeMatch) {
 		let hour = parseInt(beforeMatch[1], 10);
-		if (query.includes('pm') && hour < 12) hour += 12;
+		const ampm = beforeMatch[2] || '';
+		if (ampm === 'pm' && hour < 12) hour += 12;
+		else if (ampm === 'am' && hour === 12) hour = 0;
 		result.timeRange.end = hour * 60;
 	}
 	
@@ -1111,7 +1128,7 @@ function computeWaitlistOdds(courseData) {
 		}
 		
 		// Check for capacity expansion compared to previous entry
-		if (i > 0 && Number.isFinite(entries[i-1].capacity)) {
+		if (i > 0 && Number.isFinite(entries[i-1].capacity) && entries[i-1].capacity > 0) {
 			const capacityChange = ((entry.capacity - entries[i-1].capacity) / entries[i-1].capacity) * 100;
 			if (capacityChange >= 5) { // 5% or more expansion
 				capacityExpansions++;
@@ -2788,13 +2805,6 @@ function renderCard(anchorNode, record, courseData = null, departmentAverages = 
 				chainDisplay.textContent = chainText;
 				tooltip.appendChild(chainDisplay);
 				
-				courseName.appendChild(tooltip);
-				courseName.classList.add('rmg-course-name--has-prereqs');
-			} else {
-				// Still add tooltip but with no data message
-				const tooltip = document.createElement('div');
-				tooltip.className = 'rmg-prereq-tooltip';
-				tooltip.textContent = 'No prerequisite data available';
 				courseName.appendChild(tooltip);
 				courseName.classList.add('rmg-course-name--has-prereqs');
 			}
