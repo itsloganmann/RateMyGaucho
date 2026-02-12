@@ -728,3 +728,26 @@
 	font-weight: bold;
 }
 
+/* Feature 4: Smart Conflict Detection Styles */
+.rmg-conflict {
+	background-color: rgba(255, 99, 71, 0.08) !important;
+	opacity: 0.85;
+}
+
+.rmg-conflict-badge {
+	display: inline-block;
+	padding: 4px 8px;
+	margin: 4px;
+	background: #f8d7da;
+	color: #8a1c1c;
+	border: 1px solid #f5c6cb;
+	border-radius: 4px;
+	font-size: 11px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.rmg-conflict-badge::before {
+	content: '⚠️ ';
+}
+

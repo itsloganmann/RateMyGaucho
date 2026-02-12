@@ -434,6 +434,178 @@ function computeGradeInflationIndex(courseData, deptAverages) {
 	return { delta, label, courseGPA, deptAvg };
 }
 
+// Feature 4: Smart Conflict Detection
+function parseScheduleFromDOM() {
+	const schedule = [];
+	
+	// Look for schedule/cart sections in the DOM
+	const scheduleKeywords = ['my schedule', 'shopping cart', 'selected classes', 'enrolled', 'current schedule'];
+	let scheduleContainer = null;
+	
+	// Try to find the schedule container
+	for (const keyword of scheduleKeywords) {
+		const elements = Array.from(document.querySelectorAll('*')).filter(el => {
+			const text = (el.textContent || '').toLowerCase();
+			return text.includes(keyword) && el.querySelectorAll('tr, .course, .class').length > 0;
+		});
+		if (elements.length > 0) {
+			scheduleContainer = elements[0];
+			break;
+		}
+	}
+	
+	if (!scheduleContainer) {
+		console.log('[RateMyGaucho] No schedule container found');
+		return schedule;
+	}
+	
+	// Parse course entries in the schedule
+	const rows = scheduleContainer.querySelectorAll('tr, .course, .class, .section');
+	
+	for (const row of rows) {
+		const text = (row.textContent || '').trim();
+		
+		// Extract course code
+		const courseMatch = text.match(/\b([A-Z]{2,8})\s+(\d{1,3}[A-Z]*)\b/);
+		if (!courseMatch) continue;
+		
+		const courseCode = `${courseMatch[1]} ${courseMatch[2]}`;
+		
+		// Extract day/time information
+		// Patterns: "MWF 10:00-10:50", "TR 2:00-3:15", "M W 9:00 AM - 9:50 AM"
+		const timePattern = /([MTWRF]+)\s+(\d{1,2}):(\d{2})\s*(?:AM|PM)?\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM)?/i;
+		const timeMatch = text.match(timePattern);
+		
+		if (timeMatch) {
+			const daysStr = timeMatch[1];
+			const days = parseDayString(daysStr);
+			
+			let startHour = parseInt(timeMatch[2], 10);
+			const startMin = parseInt(timeMatch[3], 10);
+			let endHour = parseInt(timeMatch[4], 10);
+			const endMin = parseInt(timeMatch[5], 10);
+			const ampm = timeMatch[6] || '';
+			
+			// Convert to 24-hour format
+			if (ampm.toLowerCase() === 'pm' && endHour < 12) {
+				startHour += 12;
+				endHour += 12;
+			} else if (ampm.toLowerCase() === 'am' && startHour === 12) {
+				startHour = 0;
+			}
+			
+			const startMinutes = startHour * 60 + startMin;
+			const endMinutes = endHour * 60 + endMin;
+			
+			schedule.push({
+				courseCode,
+				days,
+				startMin: startMinutes,
+				endMin: endMinutes
+			});
+		}
+	}
+	
+	console.log('[RateMyGaucho] Parsed schedule:', schedule);
+	return schedule;
+}
+
+function parseDayString(daysStr) {
+	const days = [];
+	const dayMap = { 'M': 'M', 'T': 'T', 'W': 'W', 'R': 'R', 'F': 'F' };
+	
+	for (const char of daysStr.toUpperCase()) {
+		if (dayMap[char]) {
+			days.push(dayMap[char]);
+		}
+	}
+	
+	return days;
+}
+
+function detectTimeConflict(schedule, candidateDays, candidateStart, candidateEnd) {
+	const conflicts = [];
+	
+	for (const item of schedule) {
+		// Check for day overlap
+		const dayOverlap = item.days.some(day => candidateDays.includes(day));
+		if (!dayOverlap) continue;
+		
+		// Check for time overlap
+		const timeOverlap = !(candidateEnd <= item.startMin || candidateStart >= item.endMin);
+		
+		if (timeOverlap) {
+			conflicts.push(item.courseCode);
+		}
+	}
+	
+	return {
+		conflicts: conflicts.length > 0,
+		conflictsWith: conflicts
+	};
+}
+
+function scanAndFlagConflicts() {
+	const schedule = parseScheduleFromDOM();
+	
+	if (schedule.length === 0) {
+		console.log('[RateMyGaucho] No schedule to check conflicts against');
+		return;
+	}
+	
+	// Find all course rows in search results
+	const courseRows = document.querySelectorAll('tr, .course-row, .search-result');
+	
+	for (const row of courseRows) {
+		// Skip if already flagged
+		if (row.dataset.rmgConflictChecked === '1') continue;
+		row.dataset.rmgConflictChecked = '1';
+		
+		const text = (row.textContent || '').trim();
+		
+		// Extract day/time from this row
+		const timePattern = /([MTWRF]+)\s+(\d{1,2}):(\d{2})\s*(?:AM|PM)?\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM)?/i;
+		const timeMatch = text.match(timePattern);
+		
+		if (!timeMatch) continue;
+		
+		const daysStr = timeMatch[1];
+		const days = parseDayString(daysStr);
+		
+		let startHour = parseInt(timeMatch[2], 10);
+		const startMin = parseInt(timeMatch[3], 10);
+		let endHour = parseInt(timeMatch[4], 10);
+		const endMin = parseInt(timeMatch[5], 10);
+		const ampm = timeMatch[6] || '';
+		
+		if (ampm.toLowerCase() === 'pm' && endHour < 12) {
+			startHour += 12;
+			endHour += 12;
+		} else if (ampm.toLowerCase() === 'am' && startHour === 12) {
+			startHour = 0;
+		}
+		
+		const startMinutes = startHour * 60 + startMin;
+		const endMinutes = endHour * 60 + endMin;
+		
+		// Check for conflicts
+		const result = detectTimeConflict(schedule, days, startMinutes, endMinutes);
+		
+		if (result.conflicts) {
+			row.classList.add('rmg-conflict');
+			
+			// Add conflict badge
+			const badge = document.createElement('span');
+			badge.className = 'rmg-conflict-badge';
+			badge.textContent = `⚠️ Conflicts with ${result.conflictsWith.join(', ')}`;
+			badge.title = 'This course time conflicts with your current schedule';
+			
+			// Insert badge at the beginning of the row
+			row.insertBefore(badge, row.firstChild);
+		}
+	}
+}
+
 // Feature 1: GauchoOdds (Waitlist Probability)
 function computeWaitlistOdds(courseData) {
 	if (!courseData || !Array.isArray(courseData.enrollmentEntries)) {
@@ -1708,6 +1880,9 @@ function observeAndRender() {
 		if (!lookup) return;
 		const sample = nodes.slice(0, 5).map(n => (n.textContent||'').trim().replace(/\s+/g,' '));
 		console.log('[RateMyGaucho] sample candidate texts:', sample);
+		
+		// Feature 4: Run conflict detection
+		scanAndFlagConflicts();
 		
 		let matchedCount = 0;
 		let courseFoundCount = 0;
