@@ -2759,18 +2759,6 @@ function renderCard(anchorNode, record, courseData = null, departmentAverages = 
 
 	const actions = document.createElement('div');
 	actions.className = 'rmg-card-actions';
-
-	const link = document.createElement('a');
-	link.className = 'rmg-link';
-	link.target = '_blank';
-	link.rel = 'noopener noreferrer';
-	const fallbackCourseUrl = courseData?.courseUrl
-		|| (Array.isArray(record.courses) && record.courses.length ? record.courses[0].courseUrl : '')
-		|| 'https://ucsbplat.com/';
-	link.href = record.profileUrl || fallbackCourseUrl;
-	link.textContent = 'View on UCSB Plat';
-
-	actions.appendChild(link);
 	header.appendChild(actions);
 	main.appendChild(header);
 	main.appendChild(sub);
@@ -2783,33 +2771,6 @@ function renderCard(anchorNode, record, courseData = null, departmentAverages = 
 		const courseName = document.createElement('div');
 		courseName.className = 'rmg-course-name';
 		courseName.textContent = courseData.courseName;
-		
-		// Feature 3: Add prerequisite tooltip
-		if (prerequisiteMap) {
-			const normalizedCourse = normalizeCourseCode(courseData.courseName);
-			const prereqChain = buildPrereqChain(normalizedCourse, prerequisiteMap);
-			
-			if (prereqChain.prereqs && prereqChain.prereqs.length > 0) {
-				// Create tooltip container
-				const tooltip = document.createElement('div');
-				tooltip.className = 'rmg-prereq-tooltip';
-				
-				const tooltipTitle = document.createElement('div');
-				tooltipTitle.className = 'rmg-prereq-tooltip-title';
-				tooltipTitle.textContent = 'Prerequisites:';
-				tooltip.appendChild(tooltipTitle);
-				
-				const chainDisplay = document.createElement('div');
-				chainDisplay.className = 'rmg-prereq-chain';
-				const chainText = renderPrereqChain(prereqChain);
-				chainDisplay.textContent = chainText;
-				tooltip.appendChild(chainDisplay);
-				
-				courseName.appendChild(tooltip);
-				courseName.classList.add('rmg-course-name--has-prereqs');
-			}
-		}
-		
 		courseInfo.appendChild(courseName);
 
 		if (courseData.gradingBasis) {
@@ -3013,6 +2974,30 @@ function renderCard(anchorNode, record, courseData = null, departmentAverages = 
 			}
 			
 			courseInfo.appendChild(enrollmentSection);
+		}
+
+		// Feature 3: Add prerequisite section
+		if (prerequisiteMap) {
+			const normalizedCourse = normalizeCourseCode(courseData.courseName);
+			const prereqChain = buildPrereqChain(normalizedCourse, prerequisiteMap);
+			
+			if (prereqChain.prereqs && prereqChain.prereqs.length > 0) {
+				const prereqSection = document.createElement('div');
+				prereqSection.className = 'rmg-course-section';
+				
+				const prereqTitle = document.createElement('div');
+				prereqTitle.className = 'rmg-course-detail rmg-course-detail--title';
+				prereqTitle.textContent = 'Prerequisites';
+				prereqSection.appendChild(prereqTitle);
+				
+				const chainDisplay = document.createElement('div');
+				chainDisplay.className = 'rmg-prereq-chain';
+				const chainText = renderPrereqChain(prereqChain);
+				chainDisplay.textContent = chainText;
+				prereqSection.appendChild(chainDisplay);
+				
+				courseInfo.appendChild(prereqSection);
+			}
 		}
 
 		const hasCounts = Number.isFinite(courseData.foundReviews) || Number.isFinite(courseData.expectedReviews);
