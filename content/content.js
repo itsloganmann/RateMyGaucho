@@ -777,6 +777,305 @@ function renderICSDownloadButton() {
 	document.body.appendChild(button);
 }
 
+// Feature 6: Natural Language Filter
+function parseNaturalQuery(queryText) {
+	const query = queryText.toLowerCase();
+	const result = {
+		days: [],
+		timeRange: { start: null, end: null },
+		difficulty: null,
+		departments: [],
+		level: null,
+		keywords: []
+	};
+	
+	// Extract days: M, T, W, R, F
+	const dayPatterns = {
+		'monday': 'M',
+		'tuesday': 'T',
+		'wednesday': 'W',
+		'thursday': 'R',
+		'friday': 'F',
+		'mon': 'M',
+		'tue': 'T',
+		'wed': 'W',
+		'thu': 'R',
+		'fri': 'F',
+		'mw': ['M', 'W'],
+		'tr': ['T', 'R'],
+		'mwf': ['M', 'W', 'F']
+	};
+	
+	for (const [pattern, day] of Object.entries(dayPatterns)) {
+		if (query.includes(pattern)) {
+			if (Array.isArray(day)) {
+				result.days.push(...day);
+			} else {
+				result.days.push(day);
+			}
+		}
+	}
+	
+	// Extract time of day
+	if (query.includes('morning') || query.includes('am')) {
+		result.timeRange = { start: 0, end: 12 * 60 }; // before noon
+	} else if (query.includes('afternoon')) {
+		result.timeRange = { start: 12 * 60, end: 17 * 60 }; // 12pm-5pm
+	} else if (query.includes('evening') || query.includes('night')) {
+		result.timeRange = { start: 17 * 60, end: 23 * 60 }; // after 5pm
+	}
+	
+	// Extract specific times
+	const afterMatch = query.match(/after\s+(\d{1,2})\s*(?:pm|am)?/);
+	if (afterMatch) {
+		let hour = parseInt(afterMatch[1], 10);
+		if (query.includes('pm') && hour < 12) hour += 12;
+		result.timeRange.start = hour * 60;
+	}
+	
+	const beforeMatch = query.match(/before\s+(\d{1,2})\s*(?:pm|am)?/);
+	if (beforeMatch) {
+		let hour = parseInt(beforeMatch[1], 10);
+		if (query.includes('pm') && hour < 12) hour += 12;
+		result.timeRange.end = hour * 60;
+	}
+	
+	// Extract difficulty
+	if (query.includes('easy') || query.includes('easier')) {
+		result.difficulty = 'easy';
+	} else if (query.includes('hard') || query.includes('difficult')) {
+		result.difficulty = 'hard';
+	} else if (query.includes('moderate') || query.includes('medium')) {
+		result.difficulty = 'moderate';
+	}
+	
+	// Extract department codes (e.g., CMPSC, MATH, PSTAT)
+	const deptPattern = /\b([A-Z]{2,8})\b/g;
+	let deptMatch;
+	while ((deptMatch = deptPattern.exec(queryText)) !== null) {
+		result.departments.push(deptMatch[1]);
+	}
+	
+	// Extract course level
+	if (query.includes('upper division') || query.includes('upper-division')) {
+		result.level = 'upper';
+	} else if (query.includes('lower division') || query.includes('lower-division')) {
+		result.level = 'lower';
+	}
+	
+	// Extract keywords (remove common words and already-matched patterns)
+	const stopWords = ['a', 'an', 'the', 'is', 'are', 'was', 'were', 'on', 'in', 'at', 'to', 'for', 'of', 'with', 'class', 'classes', 'course', 'courses'];
+	const words = queryText.toLowerCase()
+		.replace(/[^\w\s]/g, ' ')
+		.split(/\s+/)
+		.filter(word => word.length > 2 && !stopWords.includes(word));
+	
+	// Remove already matched patterns
+	const matched = [...result.days, ...result.departments, result.difficulty, result.level].filter(Boolean);
+	result.keywords = words.filter(word => !matched.some(m => String(m).toLowerCase().includes(word)));
+	
+	return result;
+}
+
+function filterCoursesNLP(query, courseLookup, deptAverages) {
+	if (!courseLookup) {
+		return [];
+	}
+	
+	const parsed = parseNaturalQuery(query);
+	const results = [];
+	
+	for (const [courseCode, courseList] of courseLookup.entries()) {
+		for (const course of courseList) {
+			let score = 0;
+			let matches = [];
+			
+			// Match department
+			const dept = extractDepartmentFromCourse(course.courseName);
+			if (parsed.departments.length > 0) {
+				if (parsed.departments.includes(dept)) {
+					score += 10;
+					matches.push('dept');
+				} else {
+					continue; // Skip if department doesn't match
+				}
+			}
+			
+			// Match course level
+			if (parsed.level) {
+				const courseNum = parseInt(course.courseName.match(/\d+/)?.[0] || '0', 10);
+				if (parsed.level === 'upper' && courseNum >= 100) {
+					score += 5;
+					matches.push('level');
+				} else if (parsed.level === 'lower' && courseNum < 100) {
+					score += 5;
+					matches.push('level');
+				}
+			}
+			
+			// Match difficulty based on GPA
+			if (parsed.difficulty && course.gradeStats?.average) {
+				const gpa = course.gradeStats.average;
+				if (parsed.difficulty === 'easy' && gpa > 3.5) {
+					score += 8;
+					matches.push('difficulty');
+				} else if (parsed.difficulty === 'hard' && gpa < 2.8) {
+					score += 8;
+					matches.push('difficulty');
+				} else if (parsed.difficulty === 'moderate' && gpa >= 2.8 && gpa <= 3.5) {
+					score += 8;
+					matches.push('difficulty');
+				}
+			}
+			
+			// Match keywords in reviews or course name
+			if (parsed.keywords.length > 0) {
+				const searchText = [
+					course.courseName,
+					...(course.recentReviews || [])
+				].join(' ').toLowerCase();
+				
+				for (const keyword of parsed.keywords) {
+					if (searchText.includes(keyword)) {
+						score += 2;
+						matches.push('keyword');
+					}
+				}
+			}
+			
+			// Basic relevance if no specific criteria
+			if (score === 0) {
+				score = 1;
+			}
+			
+			if (score > 0) {
+				results.push({
+					course,
+					score,
+					matches
+				});
+			}
+		}
+	}
+	
+	// Sort by score and return top 20
+	results.sort((a, b) => b.score - a.score);
+	return results.slice(0, 20);
+}
+
+function renderNLPSearchBar() {
+	// Check if search bar already exists
+	if (document.querySelector('.rmg-nlp-search')) {
+		return;
+	}
+	
+	const searchContainer = document.createElement('div');
+	searchContainer.className = 'rmg-nlp-search';
+	
+	const searchInput = document.createElement('input');
+	searchInput.type = 'text';
+	searchInput.className = 'rmg-nlp-input';
+	searchInput.placeholder = 'Try: "Easy CMPSC classes on MWF mornings"';
+	
+	const resultsPanel = document.createElement('div');
+	resultsPanel.className = 'rmg-nlp-results';
+	resultsPanel.style.display = 'none';
+	
+	searchInput.addEventListener('input', async () => {
+		const query = searchInput.value.trim();
+		
+		if (query.length < 3) {
+			resultsPanel.style.display = 'none';
+			return;
+		}
+		
+		const unifiedData = await ensureUnifiedData();
+		const courseLookup = unifiedData?.courseLookup;
+		const deptAverages = unifiedData?.departmentAverages;
+		
+		if (!courseLookup) {
+			return;
+		}
+		
+		const results = filterCoursesNLP(query, courseLookup, deptAverages);
+		
+		if (results.length === 0) {
+			resultsPanel.innerHTML = '<div class="rmg-nlp-result-item rmg-nlp-no-results">No courses found matching your query</div>';
+			resultsPanel.style.display = 'block';
+			return;
+		}
+		
+		resultsPanel.innerHTML = '';
+		
+		for (const result of results) {
+			const item = document.createElement('div');
+			item.className = 'rmg-nlp-result-item';
+			
+			const courseCode = document.createElement('div');
+			courseCode.className = 'rmg-nlp-result-code';
+			courseCode.textContent = result.course.courseName;
+			item.appendChild(courseCode);
+			
+			const professor = document.createElement('div');
+			professor.className = 'rmg-nlp-result-prof';
+			professor.textContent = `Professor: ${result.course.csvProfessor || 'N/A'}`;
+			item.appendChild(professor);
+			
+			if (result.course.gradeStats?.average) {
+				const gpa = document.createElement('div');
+				gpa.className = 'rmg-nlp-result-gpa';
+				gpa.textContent = `Avg GPA: ${result.course.gradeStats.average.toFixed(2)}`;
+				item.appendChild(gpa);
+				
+				// Add grade inflation if available
+				if (deptAverages) {
+					const inflationIndex = computeGradeInflationIndex(result.course, deptAverages);
+					if (inflationIndex) {
+						const inflation = document.createElement('span');
+						inflation.className = 'rmg-nlp-result-inflation';
+						inflation.textContent = ` (${inflationIndex.label})`;
+						gpa.appendChild(inflation);
+					}
+				}
+			}
+			
+			item.addEventListener('click', () => {
+				// Try to find and scroll to this course in the page
+				const courseElements = Array.from(document.querySelectorAll('*')).filter(el => {
+					const text = (el.textContent || '').trim();
+					return text.includes(result.course.courseName);
+				});
+				
+				if (courseElements.length > 0) {
+					courseElements[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+					courseElements[0].style.backgroundColor = 'rgba(0, 54, 96, 0.1)';
+					setTimeout(() => {
+						courseElements[0].style.backgroundColor = '';
+					}, 2000);
+				}
+				
+				resultsPanel.style.display = 'none';
+				searchInput.value = '';
+			});
+			
+			resultsPanel.appendChild(item);
+		}
+		
+		resultsPanel.style.display = 'block';
+	});
+	
+	// Close results when clicking outside
+	document.addEventListener('click', (e) => {
+		if (!searchContainer.contains(e.target)) {
+			resultsPanel.style.display = 'none';
+		}
+	});
+	
+	searchContainer.appendChild(searchInput);
+	searchContainer.appendChild(resultsPanel);
+	document.body.appendChild(searchContainer);
+}
+
 // Feature 1: GauchoOdds (Waitlist Probability)
 function computeWaitlistOdds(courseData) {
 	if (!courseData || !Array.isArray(courseData.enrollmentEntries)) {
@@ -2057,6 +2356,9 @@ function observeAndRender() {
 		
 		// Feature 5: Render ICS download button (only once per page)
 		renderICSDownloadButton();
+		
+		// Feature 6: Render NLP search bar (only once per page)
+		renderNLPSearchBar();
 		
 		let matchedCount = 0;
 		let courseFoundCount = 0;
