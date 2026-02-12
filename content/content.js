@@ -606,6 +606,177 @@ function scanAndFlagConflicts() {
 	}
 }
 
+// Feature 5: Download Schedule ICS Export
+function generateICS(scheduleItems, quarterInfo) {
+	if (!scheduleItems || scheduleItems.length === 0) {
+		return null;
+	}
+	
+	// Determine quarter start and end dates
+	const quarterStart = quarterInfo?.start || new Date();
+	const quarterEnd = quarterInfo?.end || new Date(quarterStart.getTime() + 10 * 7 * 24 * 60 * 60 * 1000); // 10 weeks default
+	
+	const lines = [
+		'BEGIN:VCALENDAR',
+		'VERSION:2.0',
+		'PRODID:-//RateMyGaucho//UCSB Course Schedule//EN',
+		'CALSCALE:GREGORIAN',
+		'METHOD:PUBLISH',
+		'X-WR-CALNAME:UCSB Course Schedule',
+		'X-WR-TIMEZONE:America/Los_Angeles'
+	];
+	
+	for (const item of scheduleItems) {
+		const { courseCode, days, startMin, endMin } = item;
+		
+		// Convert days to RRULE BYDAY format
+		const byDayMap = { 'M': 'MO', 'T': 'TU', 'W': 'WE', 'R': 'TH', 'F': 'FR' };
+		const byDay = days.map(d => byDayMap[d] || d).join(',');
+		
+		// Find the first occurrence of each day in the quarter
+		const firstOccurrence = findFirstOccurrence(quarterStart, days);
+		if (!firstOccurrence) continue;
+		
+		// Calculate start and end times
+		const startHour = Math.floor(startMin / 60);
+		const startMinute = startMin % 60;
+		const endHour = Math.floor(endMin / 60);
+		const endMinute = endMin % 60;
+		
+		// Format datetime for ICS
+		const dtStart = formatICSDateTime(firstOccurrence, startHour, startMinute);
+		const dtEnd = formatICSDateTime(firstOccurrence, endHour, endMinute);
+		const until = formatICSDate(quarterEnd);
+		
+		// Create event
+		lines.push('BEGIN:VEVENT');
+		lines.push(`UID:${courseCode.replace(/\s+/g, '-')}-${Date.now()}@ratemygaucho.ucsb.edu`);
+		lines.push(`DTSTART:${dtStart}`);
+		lines.push(`DTEND:${dtEnd}`);
+		lines.push(`RRULE:FREQ=WEEKLY;BYDAY=${byDay};UNTIL=${until}`);
+		lines.push(`SUMMARY:${courseCode}`);
+		lines.push(`DESCRIPTION:UCSB Course: ${courseCode}`);
+		lines.push('STATUS:CONFIRMED');
+		lines.push('TRANSP:OPAQUE');
+		lines.push('END:VEVENT');
+	}
+	
+	lines.push('END:VCALENDAR');
+	
+	return lines.join('\r\n');
+}
+
+function findFirstOccurrence(startDate, days) {
+	const dayMap = { 'M': 1, 'T': 2, 'W': 3, 'R': 4, 'F': 5 };
+	
+	// Find the first day that matches any of the target days
+	for (let i = 0; i < 7; i++) {
+		const date = new Date(startDate);
+		date.setDate(date.getDate() + i);
+		const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
+		
+		for (const day of days) {
+			if (dayMap[day] === dayOfWeek) {
+				return date;
+			}
+		}
+	}
+	
+	return startDate;
+}
+
+function formatICSDateTime(date, hour, minute) {
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, '0');
+	const day = String(date.getDate()).padStart(2, '0');
+	const h = String(hour).padStart(2, '0');
+	const m = String(minute).padStart(2, '0');
+	return `${year}${month}${day}T${h}${m}00`;
+}
+
+function formatICSDate(date) {
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, '0');
+	const day = String(date.getDate()).padStart(2, '0');
+	return `${year}${month}${day}`;
+}
+
+function downloadICS(icsContent, filename) {
+	if (!icsContent) {
+		console.warn('[RateMyGaucho] No ICS content to download');
+		return;
+	}
+	
+	const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+	const url = URL.createObjectURL(blob);
+	
+	const link = document.createElement('a');
+	link.href = url;
+	link.download = filename || 'ucsb-schedule.ics';
+	document.body.appendChild(link);
+	link.click();
+	document.body.removeChild(link);
+	
+	URL.revokeObjectURL(url);
+	console.log('[RateMyGaucho] ICS file downloaded:', filename);
+}
+
+function renderICSDownloadButton() {
+	// Check if button already exists
+	if (document.querySelector('.rmg-ics-download-btn')) {
+		return;
+	}
+	
+	// Parse schedule
+	const schedule = parseScheduleFromDOM();
+	
+	if (schedule.length === 0) {
+		console.log('[RateMyGaucho] No schedule to export');
+		return;
+	}
+	
+	// Determine quarter info from PASS_TIME_SCHEDULES
+	const currentDate = new Date();
+	let quarterInfo = null;
+	
+	for (const [quarterName, scheduleEvents] of Object.entries(PASS_TIME_SCHEDULES)) {
+		if (scheduleEvents && scheduleEvents.length > 0) {
+			const quarterStart = scheduleEvents[0].start;
+			const quarterEnd = scheduleEvents[scheduleEvents.length - 1].end;
+			
+			if (currentDate >= quarterStart && currentDate <= quarterEnd) {
+				quarterInfo = { name: quarterName, start: quarterStart, end: quarterEnd };
+				break;
+			}
+		}
+	}
+	
+	// If no current quarter found, use a default
+	if (!quarterInfo) {
+		const start = new Date();
+		const end = new Date(start.getTime() + 10 * 7 * 24 * 60 * 60 * 1000);
+		quarterInfo = { name: 'Current Quarter', start, end };
+	}
+	
+	// Create download button
+	const button = document.createElement('button');
+	button.className = 'rmg-ics-download-btn';
+	button.textContent = '📅 Download Schedule';
+	button.title = 'Export your schedule to Google Calendar or Apple Calendar';
+	
+	button.addEventListener('click', () => {
+		const icsContent = generateICS(schedule, quarterInfo);
+		if (icsContent) {
+			const filename = `ucsb-${quarterInfo.name.replace(/\s+/g, '-').toLowerCase()}-schedule.ics`;
+			downloadICS(icsContent, filename);
+		} else {
+			alert('Could not generate schedule. Please make sure you have courses in your schedule.');
+		}
+	});
+	
+	document.body.appendChild(button);
+}
+
 // Feature 1: GauchoOdds (Waitlist Probability)
 function computeWaitlistOdds(courseData) {
 	if (!courseData || !Array.isArray(courseData.enrollmentEntries)) {
@@ -1883,6 +2054,9 @@ function observeAndRender() {
 		
 		// Feature 4: Run conflict detection
 		scanAndFlagConflicts();
+		
+		// Feature 5: Render ICS download button (only once per page)
+		renderICSDownloadButton();
 		
 		let matchedCount = 0;
 		let courseFoundCount = 0;
