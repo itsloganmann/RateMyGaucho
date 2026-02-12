@@ -265,12 +265,107 @@ function parseUnifiedCsv(csvText) {
 		
 		// Feature 2: Build department averages for grade inflation index
 		const departmentAverages = buildDepartmentAverages(courseRecords);
+		
+		// Feature 3: Extract prerequisites
+		const prerequisiteMap = extractPrerequisites(courseRecords);
 
-		return { courseRecords, courseLookup, ratingsLookup, instructors, departmentAverages };
+		return { courseRecords, courseLookup, ratingsLookup, instructors, departmentAverages, prerequisiteMap };
 	} catch (error) {
 		console.error('[RateMyGaucho] Error parsing unified CSV:', error);
 		return null;
 	}
+}
+
+// Feature 3: Prerequisite Tree Visualization
+function extractPrerequisites(courseRecords) {
+	const prereqMap = new Map();
+	
+	// Regex to match prerequisite mentions
+	const prereqPattern = /(?:prereq(?:uisite)?s?|requires?|need|after\s+taking|must\s+(?:complete|take))\s*:?\s*((?:[A-Z]{2,8}\s+\d{1,3}[A-Z]*(?:\s*(?:,|and|&|or)\s*)?)+)/gi;
+	const courseCodePattern = /\b([A-Z]{2,8})\s+(\d{1,3}[A-Z]*)\b/gi;
+	
+	for (const record of courseRecords) {
+		const courseName = record.courseName;
+		if (!courseName) continue;
+		
+		const normalizedCourse = normalizeCourseCode(courseName);
+		const prereqs = new Set();
+		
+		// Extract from reviews
+		if (Array.isArray(record.recentReviews)) {
+			for (const review of record.recentReviews) {
+				const text = String(review || '').toLowerCase();
+				let match;
+				prereqPattern.lastIndex = 0;
+				while ((match = prereqPattern.exec(text)) !== null) {
+					const prereqText = match[1];
+					courseCodePattern.lastIndex = 0;
+					let courseMatch;
+					while ((courseMatch = courseCodePattern.exec(prereqText)) !== null) {
+						const prereqCode = `${courseMatch[1]} ${courseMatch[2]}`;
+						const normalizedPrereq = normalizeCourseCode(prereqCode);
+						if (normalizedPrereq !== normalizedCourse) {
+							prereqs.add(normalizedPrereq);
+						}
+					}
+				}
+			}
+		}
+		
+		// Extract from course name patterns (e.g., CMPSC 130B likely requires CMPSC 130A)
+		const courseMatch = courseName.match(/^([A-Z]{2,8})\s+(\d{1,3})([A-Z])$/);
+		if (courseMatch) {
+			const dept = courseMatch[1];
+			const number = courseMatch[2];
+			const suffix = courseMatch[3];
+			
+			// If course ends with B, C, D, etc., assume previous letter is prerequisite
+			if (suffix && suffix !== 'A') {
+				const prevSuffix = String.fromCharCode(suffix.charCodeAt(0) - 1);
+				const prereqCode = `${dept} ${number}${prevSuffix}`;
+				const normalizedPrereq = normalizeCourseCode(prereqCode);
+				prereqs.add(normalizedPrereq);
+			}
+		}
+		
+		if (prereqs.size > 0) {
+			prereqMap.set(normalizedCourse, Array.from(prereqs));
+		}
+	}
+	
+	console.log('[RateMyGaucho] Extracted prerequisites for', prereqMap.size, 'courses');
+	return prereqMap;
+}
+
+function buildPrereqChain(courseCode, prereqMap, depth = 3, visited = new Set()) {
+	if (depth <= 0 || visited.has(courseCode)) {
+		return { code: courseCode, prereqs: [] };
+	}
+	
+	visited.add(courseCode);
+	const prereqs = prereqMap.get(courseCode) || [];
+	const chain = {
+		code: courseCode,
+		prereqs: prereqs.map(prereq => buildPrereqChain(prereq, prereqMap, depth - 1, new Set(visited)))
+	};
+	
+	return chain;
+}
+
+function renderPrereqChain(chain, indent = 0) {
+	if (!chain || !chain.code) return '';
+	
+	const arrows = indent > 0 ? ' ← ' : '';
+	const indentStr = '  '.repeat(indent);
+	let result = `${indentStr}${arrows}${chain.code}`;
+	
+	if (Array.isArray(chain.prereqs) && chain.prereqs.length > 0) {
+		for (const prereq of chain.prereqs) {
+			result += '\n' + renderPrereqChain(prereq, indent + 1);
+		}
+	}
+	
+	return result;
 }
 
 // Feature 2: Grade Inflation Index
@@ -1609,6 +1704,7 @@ function observeAndRender() {
 		const lookup = unifiedData?.ratingsLookup;
 		const courseLookup = unifiedData?.courseLookup;
 		const departmentAverages = unifiedData?.departmentAverages;
+		const prerequisiteMap = unifiedData?.prerequisiteMap;
 		if (!lookup) return;
 		const sample = nodes.slice(0, 5).map(n => (n.textContent||'').trim().replace(/\s+/g,' '));
 		console.log('[RateMyGaucho] sample candidate texts:', sample);
@@ -1688,7 +1784,7 @@ function observeAndRender() {
 			}
 			
 			courseFoundCount++;
-			renderCard(node, match, gatedCourseData, departmentAverages);
+			renderCard(node, match, gatedCourseData, departmentAverages, prerequisiteMap);
 		}
 		
 		console.log(`[RateMyGaucho] Summary: ${matchedCount}/${totalProcessed} instructors matched, ${courseFoundCount}/${matchedCount} with course data`);
@@ -1918,7 +2014,7 @@ function matchInstructor(info, lookup) {
 	return best;
 }
 
-function renderCard(anchorNode, record, courseData = null, departmentAverages = null) {
+function renderCard(anchorNode, record, courseData = null, departmentAverages = null, prerequisiteMap = null) {
 	const card = document.createElement('div');
 	const rating = Number(record.rmpScore || 0);
 	card.className = 'rmg-card ' + (rating >= 4 ? 'rmg-good' : rating >= 3 ? 'rmg-ok' : 'rmg-bad');
@@ -2019,6 +2115,40 @@ function renderCard(anchorNode, record, courseData = null, departmentAverages = 
 		const courseName = document.createElement('div');
 		courseName.className = 'rmg-course-name';
 		courseName.textContent = courseData.courseName;
+		
+		// Feature 3: Add prerequisite tooltip
+		if (prerequisiteMap) {
+			const normalizedCourse = normalizeCourseCode(courseData.courseName);
+			const prereqChain = buildPrereqChain(normalizedCourse, prerequisiteMap);
+			
+			if (prereqChain.prereqs && prereqChain.prereqs.length > 0) {
+				// Create tooltip container
+				const tooltip = document.createElement('div');
+				tooltip.className = 'rmg-prereq-tooltip';
+				
+				const tooltipTitle = document.createElement('div');
+				tooltipTitle.className = 'rmg-prereq-tooltip-title';
+				tooltipTitle.textContent = 'Prerequisites:';
+				tooltip.appendChild(tooltipTitle);
+				
+				const chainDisplay = document.createElement('div');
+				chainDisplay.className = 'rmg-prereq-chain';
+				const chainText = renderPrereqChain(prereqChain);
+				chainDisplay.textContent = chainText;
+				tooltip.appendChild(chainDisplay);
+				
+				courseName.appendChild(tooltip);
+				courseName.classList.add('rmg-course-name--has-prereqs');
+			} else {
+				// Still add tooltip but with no data message
+				const tooltip = document.createElement('div');
+				tooltip.className = 'rmg-prereq-tooltip';
+				tooltip.textContent = 'No prerequisite data available';
+				courseName.appendChild(tooltip);
+				courseName.classList.add('rmg-course-name--has-prereqs');
+			}
+		}
+		
 		courseInfo.appendChild(courseName);
 
 		if (courseData.gradingBasis) {
