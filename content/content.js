@@ -270,6 +270,116 @@ function parseUnifiedCsv(csvText) {
 	}
 }
 
+// Feature 1: GauchoOdds (Waitlist Probability)
+function computeWaitlistOdds(courseData) {
+	if (!courseData || !Array.isArray(courseData.enrollmentEntries)) {
+		return null;
+	}
+	
+	const entries = courseData.enrollmentEntries;
+	if (entries.length < 3) {
+		return null; // Not enough data for meaningful analysis
+	}
+	
+	// Analyze capacity expansion and overenrollment patterns
+	let capacityExpansions = 0;
+	let overenrollmentInstances = 0;
+	let totalCapacity = 0;
+	let totalFilled = 0;
+	let capacityCount = 0;
+	
+	for (let i = 0; i < entries.length; i++) {
+		const entry = entries[i];
+		
+		if (!Number.isFinite(entry.capacity) || !Number.isFinite(entry.filled)) {
+			continue;
+		}
+		
+		totalCapacity += entry.capacity;
+		totalFilled += entry.filled;
+		capacityCount++;
+		
+		// Check for overenrollment (filled > capacity)
+		if (entry.filled > entry.capacity) {
+			overenrollmentInstances++;
+		}
+		
+		// Check for capacity expansion compared to previous entry
+		if (i > 0 && Number.isFinite(entries[i-1].capacity)) {
+			const capacityChange = ((entry.capacity - entries[i-1].capacity) / entries[i-1].capacity) * 100;
+			if (capacityChange >= 5) { // 5% or more expansion
+				capacityExpansions++;
+			}
+		}
+	}
+	
+	if (capacityCount === 0) {
+		return null;
+	}
+	
+	// Calculate metrics
+	const avgCapacity = totalCapacity / capacityCount;
+	const avgFilled = totalFilled / capacityCount;
+	const avgUtilization = (avgFilled / avgCapacity) * 100;
+	const expansionRate = (capacityExpansions / (entries.length - 1)) * 100;
+	const overenrollmentRate = (overenrollmentInstances / capacityCount) * 100;
+	
+	// Calculate odds based on multiple factors
+	let odds = 0;
+	
+	// Factor 1: Capacity expansion history (0-40 points)
+	if (expansionRate > 30) {
+		odds += 40;
+	} else if (expansionRate > 15) {
+		odds += 30;
+	} else if (expansionRate > 5) {
+		odds += 20;
+	} else {
+		odds += 10;
+	}
+	
+	// Factor 2: Overenrollment tolerance (0-30 points)
+	if (overenrollmentRate > 40) {
+		odds += 30;
+	} else if (overenrollmentRate > 20) {
+		odds += 20;
+	} else if (overenrollmentRate > 5) {
+		odds += 10;
+	}
+	
+	// Factor 3: Average utilization (0-30 points)
+	// Lower utilization = more room = higher odds
+	if (avgUtilization < 90) {
+		odds += 30;
+	} else if (avgUtilization < 95) {
+		odds += 20;
+	} else if (avgUtilization < 100) {
+		odds += 10;
+	}
+	
+	// Ensure odds are in 0-100 range
+	odds = Math.max(0, Math.min(100, odds));
+	
+	// Determine label
+	let label;
+	let detail;
+	if (odds >= 75) {
+		label = 'Very Likely';
+		detail = 'This class frequently expands capacity or accepts overenrollment';
+	} else if (odds >= 50) {
+		label = 'Likely';
+		detail = 'This class sometimes expands capacity or has available seats';
+	} else if (odds >= 25) {
+		label = 'Possible';
+		detail = 'This class occasionally expands but fills quickly';
+	} else {
+		label = 'Unlikely';
+		detail = 'This class rarely expands and typically stays at capacity';
+	}
+	
+	return { odds, label, detail };
+}
+
 function extractTermFromCourseUrl(url) {
 	if (!url) return null;
 	try {
@@ -1987,6 +2097,36 @@ function renderCard(anchorNode, record, courseData = null) {
 			}
 
 			enrollmentSection.appendChild(chart);
+			
+			// Feature 1: Add waitlist odds display
+			const waitlistOdds = computeWaitlistOdds(courseData);
+			if (waitlistOdds) {
+				const oddsWrap = document.createElement('div');
+				oddsWrap.className = 'rmg-waitlist-odds';
+				
+				const oddsLabel = document.createElement('div');
+				oddsLabel.className = 'rmg-waitlist-odds-label';
+				oddsLabel.textContent = 'Waitlist Probability:';
+				oddsWrap.appendChild(oddsLabel);
+				
+				const oddsBadge = document.createElement('div');
+				oddsBadge.className = 'rmg-waitlist-odds-badge';
+				if (waitlistOdds.odds >= 75) {
+					oddsBadge.classList.add('rmg-waitlist-odds-badge--high');
+				} else if (waitlistOdds.odds >= 50) {
+					oddsBadge.classList.add('rmg-waitlist-odds-badge--medium');
+				} else if (waitlistOdds.odds >= 25) {
+					oddsBadge.classList.add('rmg-waitlist-odds-badge--low');
+				} else {
+					oddsBadge.classList.add('rmg-waitlist-odds-badge--very-low');
+				}
+				oddsBadge.textContent = `${Math.round(waitlistOdds.odds)}% ${waitlistOdds.label}`;
+				oddsBadge.title = waitlistOdds.detail;
+				oddsWrap.appendChild(oddsBadge);
+				
+				enrollmentSection.appendChild(oddsWrap);
+			}
+			
 			courseInfo.appendChild(enrollmentSection);
 		}
 

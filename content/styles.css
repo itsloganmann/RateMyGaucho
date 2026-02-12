@@ -573,3 +573,57 @@
 	}
 }
 
+/* Feature 1: Waitlist Odds Styles */
+.rmg-waitlist-odds {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 8px;
+	padding: 6px 0;
+}
+
+.rmg-waitlist-odds-label {
+	font-size: 12px;
+	font-weight: 600;
+	color: #003660;
+}
+
+.rmg-waitlist-odds-badge {
+	display: inline-block;
+	padding: 4px 10px;
+	border-radius: 12px;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.3px;
+	transition: transform 0.2s ease;
+	cursor: help;
+}
+
+.rmg-waitlist-odds-badge:hover {
+	transform: scale(1.05);
+}
+
+.rmg-waitlist-odds-badge--high {
+	background: #d8efe1;
+	color: #1b5e20;
+	border: 1px solid #a5d6a7;
+}
+
+.rmg-waitlist-odds-badge--medium {
+	background: #fff4d6;
+	color: #7a5800;
+	border: 1px solid #ffeb3b;
+}
+
+.rmg-waitlist-odds-badge--low {
+	background: #ffe0b2;
+	color: #e65100;
+	border: 1px solid #ffb74d;
+}
+
+.rmg-waitlist-odds-badge--very-low {
+	background: #f8d7da;
+	color: #8a1c1c;
+	border: 1px solid #f5c6cb;
+}
+
