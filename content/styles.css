@@ -663,59 +663,14 @@
 }
 
 /* Feature 3: Prerequisite Tree Styles */
-.rmg-course-name--has-prereqs {
-	position: relative;
-	display: inline-block;
-	cursor: help;
-}
-
-.rmg-prereq-tooltip {
-	position: absolute;
-	top: 100%;
-	left: 0;
-	margin-top: 8px;
-	padding: 10px;
-	background: #ffffff;
-	border: 1px solid #003660;
-	border-radius: 6px;
-	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-	z-index: 1000;
-	min-width: 200px;
-	max-width: 350px;
-	opacity: 0;
-	visibility: hidden;
-	transition: opacity 0.2s ease, visibility 0.2s ease;
-	pointer-events: none;
-	white-space: pre-wrap;
-	font-size: 11px;
-}
-
-.rmg-course-name--has-prereqs:hover .rmg-prereq-tooltip {
-	opacity: 1;
-	visibility: visible;
-	transition-delay: 0.2s;
-}
-
-.rmg-prereq-tooltip::before {
-	content: '';
-	position: absolute;
-	bottom: 100%;
-	left: 12px;
-	border: 6px solid transparent;
-	border-bottom-color: #003660;
-}
-
-.rmg-prereq-tooltip-title {
-	font-weight: 700;
-	color: #003660;
-	margin-bottom: 6px;
-	font-size: 12px;
-}
-
+/* Prerequisite chain display - now shown as a visible section */
 .rmg-prereq-chain {
-	color: #333;
-	line-height: 1.5;
+	color: #475569;
+	line-height: 1.6;
 	font-family: 'Courier New', monospace;
+	font-size: 12px;
+	white-space: pre-wrap;
+	padding: 4px 0;
 }
 
 .rmg-prereq-node {
