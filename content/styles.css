@@ -627,3 +627,38 @@
 	border: 1px solid #f5c6cb;
 }
 
+/* Feature 2: Grade Inflation Index Styles */
+.rmg-grade-inflation {
+	display: inline-block;
+	padding: 3px 8px;
+	border-radius: 8px;
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.2px;
+	margin-left: 8px;
+	cursor: help;
+	transition: transform 0.2s ease;
+}
+
+.rmg-grade-inflation:hover {
+	transform: scale(1.05);
+}
+
+.rmg-grade-inflation--easier {
+	background: #d8efe1;
+	color: #1b5e20;
+	border: 1px solid #a5d6a7;
+}
+
+.rmg-grade-inflation--harder {
+	background: #f8d7da;
+	color: #8a1c1c;
+	border: 1px solid #f5c6cb;
+}
+
+.rmg-grade-inflation--neutral {
+	background: #e3f2fd;
+	color: #01579b;
+	border: 1px solid #90caf9;
+}
+

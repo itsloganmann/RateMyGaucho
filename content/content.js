@@ -262,12 +262,81 @@ function parseUnifiedCsv(csvText) {
 
 		const courseLookup = buildCourseLookup(courseRecords);
 		const ratingsLookup = buildLookup(instructors);
+		
+		// Feature 2: Build department averages for grade inflation index
+		const departmentAverages = buildDepartmentAverages(courseRecords);
 
-		return { courseRecords, courseLookup, ratingsLookup, instructors };
+		return { courseRecords, courseLookup, ratingsLookup, instructors, departmentAverages };
 	} catch (error) {
 		console.error('[RateMyGaucho] Error parsing unified CSV:', error);
 		return null;
 	}
+}
+
+// Feature 2: Grade Inflation Index
+function buildDepartmentAverages(courseRecords) {
+	const deptMap = new Map();
+	
+	for (const record of courseRecords) {
+		const dept = extractDepartmentFromCourse(record.courseName);
+		if (!dept) continue;
+		
+		const gradeStats = record.gradeStats;
+		if (!gradeStats || !Number.isFinite(gradeStats.average)) continue;
+		
+		if (!deptMap.has(dept)) {
+			deptMap.set(dept, { totalWeightedGPA: 0, totalWeight: 0 });
+		}
+		
+		const bucket = deptMap.get(dept);
+		const weight = Number.isFinite(gradeStats.weight) ? gradeStats.weight : 1;
+		bucket.totalWeightedGPA += gradeStats.average * weight;
+		bucket.totalWeight += weight;
+	}
+	
+	const averages = new Map();
+	for (const [dept, bucket] of deptMap.entries()) {
+		if (bucket.totalWeight > 0) {
+			averages.set(dept, bucket.totalWeightedGPA / bucket.totalWeight);
+		}
+	}
+	
+	console.log('[RateMyGaucho] Built department averages for', averages.size, 'departments');
+	return averages;
+}
+
+function computeGradeInflationIndex(courseData, deptAverages) {
+	if (!courseData || !deptAverages) {
+		return null;
+	}
+	
+	const courseGPA = courseData.gradeStats?.average;
+	if (!Number.isFinite(courseGPA)) {
+		return null;
+	}
+	
+	const dept = extractDepartmentFromCourse(courseData.courseName);
+	if (!dept) {
+		return null;
+	}
+	
+	const deptAvg = deptAverages.get(dept);
+	if (!Number.isFinite(deptAvg)) {
+		return null;
+	}
+	
+	const delta = courseGPA - deptAvg;
+	
+	let label;
+	if (Math.abs(delta) < 0.15) {
+		label = 'Near dept avg';
+	} else if (delta > 0) {
+		label = `+${delta.toFixed(2)} GPA (Easier than avg)`;
+	} else {
+		label = `${delta.toFixed(2)} GPA (Harder than avg)`;
+	}
+	
+	return { delta, label, courseGPA, deptAvg };
 }
 
 // Feature 1: GauchoOdds (Waitlist Probability)
@@ -1536,8 +1605,10 @@ function observeAndRender() {
 		const nodes = findInstructorNodes();
 		console.log('[RateMyGaucho] instructor candidates:', nodes.length);
 		if (!nodes.length) return;
-		const lookup = await ensureRatingsLoaded();
-		const courseLookup = await ensureCoursesLoaded();
+		const unifiedData = await ensureUnifiedData();
+		const lookup = unifiedData?.ratingsLookup;
+		const courseLookup = unifiedData?.courseLookup;
+		const departmentAverages = unifiedData?.departmentAverages;
 		if (!lookup) return;
 		const sample = nodes.slice(0, 5).map(n => (n.textContent||'').trim().replace(/\s+/g,' '));
 		console.log('[RateMyGaucho] sample candidate texts:', sample);
@@ -1617,7 +1688,7 @@ function observeAndRender() {
 			}
 			
 			courseFoundCount++;
-			renderCard(node, match, gatedCourseData);
+			renderCard(node, match, gatedCourseData, departmentAverages);
 		}
 		
 		console.log(`[RateMyGaucho] Summary: ${matchedCount}/${totalProcessed} instructors matched, ${courseFoundCount}/${matchedCount} with course data`);
@@ -1847,7 +1918,7 @@ function matchInstructor(info, lookup) {
 	return best;
 }
 
-function renderCard(anchorNode, record, courseData = null) {
+function renderCard(anchorNode, record, courseData = null, departmentAverages = null) {
 	const card = document.createElement('div');
 	const rating = Number(record.rmpScore || 0);
 	card.className = 'rmg-card ' + (rating >= 4 ? 'rmg-good' : rating >= 3 ? 'rmg-ok' : 'rmg-bad');
@@ -1980,6 +2051,29 @@ function renderCard(anchorNode, record, courseData = null) {
 			const gradeTitle = document.createElement('div');
 			gradeTitle.className = 'rmg-course-detail rmg-course-detail--title';
 			gradeTitle.textContent = 'Grade distribution';
+			
+			// Feature 2: Add grade inflation index
+			if (departmentAverages) {
+				const inflationIndex = computeGradeInflationIndex(courseData, departmentAverages);
+				if (inflationIndex) {
+					const inflationChip = document.createElement('span');
+					inflationChip.className = 'rmg-grade-inflation';
+					
+					if (Math.abs(inflationIndex.delta) < 0.15) {
+						inflationChip.classList.add('rmg-grade-inflation--neutral');
+					} else if (inflationIndex.delta > 0) {
+						inflationChip.classList.add('rmg-grade-inflation--easier');
+					} else {
+						inflationChip.classList.add('rmg-grade-inflation--harder');
+					}
+					
+					inflationChip.textContent = inflationIndex.label;
+					inflationChip.title = `Course GPA: ${inflationIndex.courseGPA.toFixed(2)}, Dept Avg: ${inflationIndex.deptAvg.toFixed(2)}`;
+					gradeTitle.appendChild(document.createTextNode(' '));
+					gradeTitle.appendChild(inflationChip);
+				}
+			}
+			
 			gradeSection.appendChild(gradeTitle);
 
 			if (gradeHasPercents) {
