@@ -573,3 +573,313 @@
 	}
 }
 
+/* Feature 1: Waitlist Odds Styles */
+.rmg-waitlist-odds {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 8px;
+	padding: 6px 0;
+}
+
+.rmg-waitlist-odds-label {
+	font-size: 12px;
+	font-weight: 600;
+	color: #003660;
+}
+
+.rmg-waitlist-odds-badge {
+	display: inline-block;
+	padding: 4px 10px;
+	border-radius: 12px;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.3px;
+	transition: transform 0.2s ease;
+	cursor: help;
+}
+
+.rmg-waitlist-odds-badge:hover {
+	transform: scale(1.05);
+}
+
+.rmg-waitlist-odds-badge--high {
+	background: #d8efe1;
+	color: #1b5e20;
+	border: 1px solid #a5d6a7;
+}
+
+.rmg-waitlist-odds-badge--medium {
+	background: #fff4d6;
+	color: #7a5800;
+	border: 1px solid #ffeb3b;
+}
+
+.rmg-waitlist-odds-badge--low {
+	background: #ffe0b2;
+	color: #e65100;
+	border: 1px solid #ffb74d;
+}
+
+.rmg-waitlist-odds-badge--very-low {
+	background: #f8d7da;
+	color: #8a1c1c;
+	border: 1px solid #f5c6cb;
+}
+
+/* Feature 2: Grade Inflation Index Styles */
+.rmg-grade-inflation {
+	display: inline-block;
+	padding: 3px 8px;
+	border-radius: 8px;
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.2px;
+	margin-left: 8px;
+	cursor: help;
+	transition: transform 0.2s ease;
+}
+
+.rmg-grade-inflation:hover {
+	transform: scale(1.05);
+}
+
+.rmg-grade-inflation--easier {
+	background: #d8efe1;
+	color: #1b5e20;
+	border: 1px solid #a5d6a7;
+}
+
+.rmg-grade-inflation--harder {
+	background: #f8d7da;
+	color: #8a1c1c;
+	border: 1px solid #f5c6cb;
+}
+
+.rmg-grade-inflation--neutral {
+	background: #e3f2fd;
+	color: #01579b;
+	border: 1px solid #90caf9;
+}
+
+/* Feature 3: Prerequisite Tree Styles */
+.rmg-course-name--has-prereqs {
+	position: relative;
+	display: inline-block;
+	cursor: help;
+}
+
+.rmg-prereq-tooltip {
+	position: absolute;
+	top: 100%;
+	left: 0;
+	margin-top: 8px;
+	padding: 10px;
+	background: #ffffff;
+	border: 1px solid #003660;
+	border-radius: 6px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+	z-index: 1000;
+	min-width: 200px;
+	max-width: 350px;
+	opacity: 0;
+	visibility: hidden;
+	transition: opacity 0.2s ease, visibility 0.2s ease;
+	pointer-events: none;
+	white-space: pre-wrap;
+	font-size: 11px;
+}
+
+.rmg-course-name--has-prereqs:hover .rmg-prereq-tooltip {
+	opacity: 1;
+	visibility: visible;
+	transition-delay: 0.2s;
+}
+
+.rmg-prereq-tooltip::before {
+	content: '';
+	position: absolute;
+	bottom: 100%;
+	left: 12px;
+	border: 6px solid transparent;
+	border-bottom-color: #003660;
+}
+
+.rmg-prereq-tooltip-title {
+	font-weight: 700;
+	color: #003660;
+	margin-bottom: 6px;
+	font-size: 12px;
+}
+
+.rmg-prereq-chain {
+	color: #333;
+	line-height: 1.5;
+	font-family: 'Courier New', monospace;
+}
+
+.rmg-prereq-node {
+	display: block;
+	margin: 2px 0;
+}
+
+.rmg-prereq-arrow {
+	color: #003660;
+	font-weight: bold;
+}
+
+/* Feature 4: Smart Conflict Detection Styles */
+.rmg-conflict {
+	background-color: rgba(255, 99, 71, 0.08) !important;
+	opacity: 0.85;
+}
+
+.rmg-conflict-badge {
+	display: inline-block;
+	padding: 4px 8px;
+	margin: 4px;
+	background: #f8d7da;
+	color: #8a1c1c;
+	border: 1px solid #f5c6cb;
+	border-radius: 4px;
+	font-size: 11px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.rmg-conflict-badge::before {
+	content: '⚠️ ';
+}
+
+/* Feature 5: Download Schedule ICS Export Styles */
+.rmg-ics-download-btn {
+	position: fixed;
+	bottom: 24px;
+	right: 24px;
+	z-index: 9999;
+	padding: 12px 20px;
+	background: linear-gradient(135deg, #003660 0%, #005a9e 100%);
+	color: #ffffff;
+	border: 2px solid #002040;
+	border-radius: 10px;
+	font-size: 14px;
+	font-weight: 700;
+	cursor: pointer;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2), 0 2px 4px rgba(0, 0, 0, 0.1);
+	transition: all 0.3s ease;
+	letter-spacing: 0.3px;
+}
+
+.rmg-ics-download-btn:hover {
+	transform: translateY(-2px);
+	box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25), 0 3px 6px rgba(0, 0, 0, 0.15);
+	background: linear-gradient(135deg, #004d7a 0%, #006bb8 100%);
+}
+
+.rmg-ics-download-btn:active {
+	transform: translateY(0);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Feature 6: Natural Language Filter Styles */
+.rmg-nlp-search {
+	position: fixed;
+	top: 80px;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 9998;
+	width: 90%;
+	max-width: 600px;
+}
+
+.rmg-nlp-input {
+	width: 100%;
+	padding: 14px 20px;
+	font-size: 15px;
+	border: 2px solid #003660;
+	border-radius: 12px;
+	background: rgba(255, 255, 255, 0.95);
+	backdrop-filter: blur(10px);
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+	transition: all 0.3s ease;
+	box-sizing: border-box;
+}
+
+.rmg-nlp-input:focus {
+	outline: none;
+	border-color: #005a9e;
+	box-shadow: 0 6px 20px rgba(0, 54, 96, 0.25);
+	background: rgba(255, 255, 255, 1);
+}
+
+.rmg-nlp-input::placeholder {
+	color: #666;
+	font-style: italic;
+}
+
+.rmg-nlp-results {
+	position: absolute;
+	top: 100%;
+	left: 0;
+	right: 0;
+	margin-top: 8px;
+	max-height: 400px;
+	overflow-y: auto;
+	background: rgba(255, 255, 255, 0.98);
+	backdrop-filter: blur(10px);
+	border: 2px solid #003660;
+	border-radius: 12px;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.rmg-nlp-result-item {
+	padding: 12px 16px;
+	border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+	cursor: pointer;
+	transition: background-color 0.2s ease;
+}
+
+.rmg-nlp-result-item:hover {
+	background-color: rgba(0, 54, 96, 0.08);
+}
+
+.rmg-nlp-result-item:last-child {
+	border-bottom: none;
+}
+
+.rmg-nlp-no-results {
+	color: #666;
+	font-style: italic;
+	text-align: center;
+	cursor: default;
+}
+
+.rmg-nlp-no-results:hover {
+	background-color: transparent;
+}
+
+.rmg-nlp-result-code {
+	font-weight: 700;
+	color: #003660;
+	font-size: 14px;
+	margin-bottom: 4px;
+}
+
+.rmg-nlp-result-prof {
+	font-size: 12px;
+	color: #555;
+	margin-bottom: 2px;
+}
+
+.rmg-nlp-result-gpa {
+	font-size: 12px;
+	color: #666;
+	font-weight: 600;
+}
+
+.rmg-nlp-result-inflation {
+	font-size: 11px;
+	font-weight: 500;
+	color: #005a9e;
+}
+

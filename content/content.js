@@ -262,12 +262,945 @@ function parseUnifiedCsv(csvText) {
 
 		const courseLookup = buildCourseLookup(courseRecords);
 		const ratingsLookup = buildLookup(instructors);
+		
+		// Feature 2: Build department averages for grade inflation index
+		const departmentAverages = buildDepartmentAverages(courseRecords);
+		
+		// Feature 3: Extract prerequisites
+		const prerequisiteMap = extractPrerequisites(courseRecords);
 
-		return { courseRecords, courseLookup, ratingsLookup, instructors };
+		return { courseRecords, courseLookup, ratingsLookup, instructors, departmentAverages, prerequisiteMap };
 	} catch (error) {
 		console.error('[RateMyGaucho] Error parsing unified CSV:', error);
 		return null;
 	}
+}
+
+// Feature 3: Prerequisite Tree Visualization
+function extractPrerequisites(courseRecords) {
+	const prereqMap = new Map();
+	
+	// Regex to match prerequisite mentions
+	const prereqPattern = /(?:prereq(?:uisite)?s?|requires?|need|after\s+taking|must\s+(?:complete|take))\s*:?\s*((?:[A-Z]{2,8}\s+\d{1,3}[A-Z]*(?:\s*(?:,|and|&|or)\s*)?)+)/gi;
+	const courseCodePattern = /\b([A-Z]{2,8})\s+(\d{1,3}[A-Z]*)\b/gi;
+	
+	for (const record of courseRecords) {
+		const courseName = record.courseName;
+		if (!courseName) continue;
+		
+		const normalizedCourse = normalizeCourseCode(courseName);
+		const prereqs = new Set();
+		
+		// Extract from reviews
+		if (Array.isArray(record.recentReviews)) {
+			for (const review of record.recentReviews) {
+				const text = String(review || '').toLowerCase();
+				let match;
+				prereqPattern.lastIndex = 0;
+				while ((match = prereqPattern.exec(text)) !== null) {
+					const prereqText = match[1];
+					courseCodePattern.lastIndex = 0;
+					let courseMatch;
+					while ((courseMatch = courseCodePattern.exec(prereqText)) !== null) {
+						const prereqCode = `${courseMatch[1]} ${courseMatch[2]}`;
+						const normalizedPrereq = normalizeCourseCode(prereqCode);
+						if (normalizedPrereq !== normalizedCourse) {
+							prereqs.add(normalizedPrereq);
+						}
+					}
+				}
+			}
+		}
+		
+		// Extract from course name patterns (e.g., CMPSC 130B likely requires CMPSC 130A)
+		const courseMatch = courseName.match(/^([A-Z]{2,8})\s+(\d{1,3})([A-Z])$/);
+		if (courseMatch) {
+			const dept = courseMatch[1];
+			const number = courseMatch[2];
+			const suffix = courseMatch[3];
+			
+			// If course ends with B, C, D, etc., assume previous letter is prerequisite
+			if (suffix && suffix !== 'A') {
+				const prevSuffix = String.fromCharCode(suffix.charCodeAt(0) - 1);
+				const prereqCode = `${dept} ${number}${prevSuffix}`;
+				const normalizedPrereq = normalizeCourseCode(prereqCode);
+				prereqs.add(normalizedPrereq);
+			}
+		}
+		
+		if (prereqs.size > 0) {
+			prereqMap.set(normalizedCourse, Array.from(prereqs));
+		}
+	}
+	
+	console.log('[RateMyGaucho] Extracted prerequisites for', prereqMap.size, 'courses');
+	return prereqMap;
+}
+
+function buildPrereqChain(courseCode, prereqMap, depth = 3, visited = new Set()) {
+	if (depth <= 0 || visited.has(courseCode)) {
+		return { code: courseCode, prereqs: [] };
+	}
+	
+	visited.add(courseCode);
+	const prereqs = prereqMap.get(courseCode) || [];
+	const chain = {
+		code: courseCode,
+		prereqs: prereqs.map(prereq => buildPrereqChain(prereq, prereqMap, depth - 1, new Set(visited)))
+	};
+	
+	return chain;
+}
+
+function renderPrereqChain(chain, indent = 0) {
+	if (!chain || !chain.code) return '';
+	
+	const arrows = indent > 0 ? ' ← ' : '';
+	const indentStr = '  '.repeat(indent);
+	let result = `${indentStr}${arrows}${chain.code}`;
+	
+	if (Array.isArray(chain.prereqs) && chain.prereqs.length > 0) {
+		for (const prereq of chain.prereqs) {
+			result += '\n' + renderPrereqChain(prereq, indent + 1);
+		}
+	}
+	
+	return result;
+}
+
+// Feature 2: Grade Inflation Index
+function buildDepartmentAverages(courseRecords) {
+	const deptMap = new Map();
+	
+	for (const record of courseRecords) {
+		const dept = extractDepartmentFromCourse(record.courseName);
+		if (!dept) continue;
+		
+		const gradeStats = record.gradeStats;
+		if (!gradeStats || !Number.isFinite(gradeStats.average)) continue;
+		
+		if (!deptMap.has(dept)) {
+			deptMap.set(dept, { totalWeightedGPA: 0, totalWeight: 0 });
+		}
+		
+		const bucket = deptMap.get(dept);
+		const weight = Number.isFinite(gradeStats.weight) ? gradeStats.weight : 1;
+		bucket.totalWeightedGPA += gradeStats.average * weight;
+		bucket.totalWeight += weight;
+	}
+	
+	const averages = new Map();
+	for (const [dept, bucket] of deptMap.entries()) {
+		if (bucket.totalWeight > 0) {
+			averages.set(dept, bucket.totalWeightedGPA / bucket.totalWeight);
+		}
+	}
+	
+	console.log('[RateMyGaucho] Built department averages for', averages.size, 'departments');
+	return averages;
+}
+
+function computeGradeInflationIndex(courseData, deptAverages) {
+	if (!courseData || !deptAverages) {
+		return null;
+	}
+	
+	const courseGPA = courseData.gradeStats?.average;
+	if (!Number.isFinite(courseGPA)) {
+		return null;
+	}
+	
+	const dept = extractDepartmentFromCourse(courseData.courseName);
+	if (!dept) {
+		return null;
+	}
+	
+	const deptAvg = deptAverages.get(dept);
+	if (!Number.isFinite(deptAvg)) {
+		return null;
+	}
+	
+	const delta = courseGPA - deptAvg;
+	
+	let label;
+	if (Math.abs(delta) < 0.15) {
+		label = 'Near dept avg';
+	} else if (delta > 0) {
+		label = `+${delta.toFixed(2)} GPA (Easier than avg)`;
+	} else {
+		label = `${delta.toFixed(2)} GPA (Harder than avg)`;
+	}
+	
+	return { delta, label, courseGPA, deptAvg };
+}
+
+// Feature 4: Smart Conflict Detection
+function parseScheduleFromDOM() {
+	const schedule = [];
+	
+	// Look for schedule/cart sections in the DOM
+	const scheduleKeywords = ['my schedule', 'shopping cart', 'selected classes', 'enrolled', 'current schedule'];
+	let scheduleContainer = null;
+	
+	// Try to find the schedule container
+	for (const keyword of scheduleKeywords) {
+		const elements = Array.from(document.querySelectorAll('*')).filter(el => {
+			const text = (el.textContent || '').toLowerCase();
+			return text.includes(keyword) && el.querySelectorAll('tr, .course, .class').length > 0;
+		});
+		if (elements.length > 0) {
+			scheduleContainer = elements[0];
+			break;
+		}
+	}
+	
+	if (!scheduleContainer) {
+		console.log('[RateMyGaucho] No schedule container found');
+		return schedule;
+	}
+	
+	// Parse course entries in the schedule
+	const rows = scheduleContainer.querySelectorAll('tr, .course, .class, .section');
+	
+	for (const row of rows) {
+		const text = (row.textContent || '').trim();
+		
+		// Extract course code
+		const courseMatch = text.match(/\b([A-Z]{2,8})\s+(\d{1,3}[A-Z]*)\b/);
+		if (!courseMatch) continue;
+		
+		const courseCode = `${courseMatch[1]} ${courseMatch[2]}`;
+		
+		// Extract day/time information
+		// Patterns: "MWF 10:00-10:50", "TR 2:00-3:15", "M W 9:00 AM - 9:50 AM"
+		const timePattern = /([MTWRF]+)\s+(\d{1,2}):(\d{2})\s*(AM|PM)?\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM)?/i;
+		const timeMatch = text.match(timePattern);
+		
+		if (timeMatch) {
+			const daysStr = timeMatch[1];
+			const days = parseDayString(daysStr);
+			
+			let startHour = parseInt(timeMatch[2], 10);
+			const startMin = parseInt(timeMatch[3], 10);
+			const startAmPm = (timeMatch[4] || '').toLowerCase();
+			let endHour = parseInt(timeMatch[5], 10);
+			const endMin = parseInt(timeMatch[6], 10);
+			const endAmPm = (timeMatch[7] || startAmPm).toLowerCase(); // Use end AM/PM or fall back to start
+			
+			// Convert to 24-hour format
+			if (startAmPm === 'pm' && startHour < 12) {
+				startHour += 12;
+			} else if (startAmPm === 'am' && startHour === 12) {
+				startHour = 0;
+			}
+			
+			if (endAmPm === 'pm' && endHour < 12) {
+				endHour += 12;
+			} else if (endAmPm === 'am' && endHour === 12) {
+				endHour = 0;
+			}
+			
+			const startMinutes = startHour * 60 + startMin;
+			const endMinutes = endHour * 60 + endMin;
+			
+			schedule.push({
+				courseCode,
+				days,
+				startMin: startMinutes,
+				endMin: endMinutes
+			});
+		}
+	}
+	
+	console.log('[RateMyGaucho] Parsed schedule:', schedule);
+	return schedule;
+}
+
+function parseDayString(daysStr) {
+	const days = [];
+	const dayMap = { 'M': 'M', 'T': 'T', 'W': 'W', 'R': 'R', 'F': 'F' };
+	
+	for (const char of daysStr.toUpperCase()) {
+		if (dayMap[char]) {
+			days.push(dayMap[char]);
+		}
+	}
+	
+	return days;
+}
+
+function detectTimeConflict(schedule, candidateDays, candidateStart, candidateEnd) {
+	const conflicts = [];
+	
+	for (const item of schedule) {
+		// Check for day overlap
+		const dayOverlap = item.days.some(day => candidateDays.includes(day));
+		if (!dayOverlap) continue;
+		
+		// Check for time overlap
+		const timeOverlap = !(candidateEnd <= item.startMin || candidateStart >= item.endMin);
+		
+		if (timeOverlap) {
+			conflicts.push(item.courseCode);
+		}
+	}
+	
+	return {
+		conflicts: conflicts.length > 0,
+		conflictsWith: conflicts
+	};
+}
+
+function scanAndFlagConflicts() {
+	const schedule = parseScheduleFromDOM();
+	
+	if (schedule.length === 0) {
+		console.log('[RateMyGaucho] No schedule to check conflicts against');
+		return;
+	}
+	
+	// Find all course rows in search results
+	const courseRows = document.querySelectorAll('tr, .course-row, .search-result');
+	
+	for (const row of courseRows) {
+		// Skip if already flagged
+		if (row.dataset.rmgConflictChecked === '1') continue;
+		row.dataset.rmgConflictChecked = '1';
+		
+		const text = (row.textContent || '').trim();
+		
+		// Extract day/time from this row
+		const timePattern = /([MTWRF]+)\s+(\d{1,2}):(\d{2})\s*(AM|PM)?\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM)?/i;
+		const timeMatch = text.match(timePattern);
+		
+		if (!timeMatch) continue;
+		
+		const daysStr = timeMatch[1];
+		const days = parseDayString(daysStr);
+		
+		let startHour = parseInt(timeMatch[2], 10);
+		const startMin = parseInt(timeMatch[3], 10);
+		const startAmPm = (timeMatch[4] || '').toLowerCase();
+		let endHour = parseInt(timeMatch[5], 10);
+		const endMin = parseInt(timeMatch[6], 10);
+		const endAmPm = (timeMatch[7] || startAmPm).toLowerCase();
+		
+		if (startAmPm === 'pm' && startHour < 12) {
+			startHour += 12;
+		} else if (startAmPm === 'am' && startHour === 12) {
+			startHour = 0;
+		}
+		
+		if (endAmPm === 'pm' && endHour < 12) {
+			endHour += 12;
+		} else if (endAmPm === 'am' && endHour === 12) {
+			endHour = 0;
+		}
+		
+		const startMinutes = startHour * 60 + startMin;
+		const endMinutes = endHour * 60 + endMin;
+		
+		// Check for conflicts
+		const result = detectTimeConflict(schedule, days, startMinutes, endMinutes);
+		
+		if (result.conflicts) {
+			row.classList.add('rmg-conflict');
+			
+			// Add conflict badge
+			const badge = document.createElement('span');
+			badge.className = 'rmg-conflict-badge';
+			badge.textContent = `Conflicts with ${result.conflictsWith.join(', ')}`;
+			badge.title = 'This course time conflicts with your current schedule';
+			
+			// Insert badge at the beginning of the row
+			row.insertBefore(badge, row.firstChild);
+		}
+	}
+}
+
+// Feature 5: Download Schedule ICS Export
+function generateICS(scheduleItems, quarterInfo) {
+	if (!scheduleItems || scheduleItems.length === 0) {
+		return null;
+	}
+	
+	// Determine quarter start and end dates
+	const quarterStart = quarterInfo?.start || new Date();
+	const quarterEnd = quarterInfo?.end || new Date(quarterStart.getTime() + 10 * 7 * 24 * 60 * 60 * 1000); // 10 weeks default
+	
+	const lines = [
+		'BEGIN:VCALENDAR',
+		'VERSION:2.0',
+		'PRODID:-//RateMyGaucho//UCSB Course Schedule//EN',
+		'CALSCALE:GREGORIAN',
+		'METHOD:PUBLISH',
+		'X-WR-CALNAME:UCSB Course Schedule',
+		'X-WR-TIMEZONE:America/Los_Angeles'
+	];
+	
+	for (const item of scheduleItems) {
+		const { courseCode, days, startMin, endMin } = item;
+		
+		// Convert days to RRULE BYDAY format
+		const byDayMap = { 'M': 'MO', 'T': 'TU', 'W': 'WE', 'R': 'TH', 'F': 'FR' };
+		const byDay = days.map(d => byDayMap[d] || d).join(',');
+		
+		// Find the first occurrence of each day in the quarter
+		const firstOccurrence = findFirstOccurrence(quarterStart, days);
+		if (!firstOccurrence) continue;
+		
+		// Calculate start and end times
+		const startHour = Math.floor(startMin / 60);
+		const startMinute = startMin % 60;
+		const endHour = Math.floor(endMin / 60);
+		const endMinute = endMin % 60;
+		
+		// Format datetime for ICS
+		const dtStart = formatICSDateTime(firstOccurrence, startHour, startMinute);
+		const dtEnd = formatICSDateTime(firstOccurrence, endHour, endMinute);
+		const until = formatICSDate(quarterEnd);
+		
+		// Create event
+		lines.push('BEGIN:VEVENT');
+		lines.push(`UID:${courseCode.replace(/\s+/g, '-')}-${Date.now()}@ratemygaucho.ucsb.edu`);
+		lines.push(`DTSTART:${dtStart}`);
+		lines.push(`DTEND:${dtEnd}`);
+		lines.push(`RRULE:FREQ=WEEKLY;BYDAY=${byDay};UNTIL=${until}`);
+		lines.push(`SUMMARY:${courseCode}`);
+		lines.push(`DESCRIPTION:UCSB Course: ${courseCode}`);
+		lines.push('STATUS:CONFIRMED');
+		lines.push('TRANSP:OPAQUE');
+		lines.push('END:VEVENT');
+	}
+	
+	lines.push('END:VCALENDAR');
+	
+	return lines.join('\r\n');
+}
+
+function findFirstOccurrence(startDate, days) {
+	const dayMap = { 'M': 1, 'T': 2, 'W': 3, 'R': 4, 'F': 5 };
+	
+	// Find the first day that matches any of the target days
+	for (let i = 0; i < 7; i++) {
+		const date = new Date(startDate);
+		date.setDate(date.getDate() + i);
+		const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
+		
+		for (const day of days) {
+			if (dayMap[day] === dayOfWeek) {
+				return date;
+			}
+		}
+	}
+	
+	return startDate;
+}
+
+function formatICSDateTime(date, hour, minute) {
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, '0');
+	const day = String(date.getDate()).padStart(2, '0');
+	const h = String(hour).padStart(2, '0');
+	const m = String(minute).padStart(2, '0');
+	return `${year}${month}${day}T${h}${m}00`;
+}
+
+function formatICSDate(date) {
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, '0');
+	const day = String(date.getDate()).padStart(2, '0');
+	return `${year}${month}${day}`;
+}
+
+function downloadICS(icsContent, filename) {
+	if (!icsContent) {
+		console.warn('[RateMyGaucho] No ICS content to download');
+		return;
+	}
+	
+	const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+	const url = URL.createObjectURL(blob);
+	
+	const link = document.createElement('a');
+	link.href = url;
+	link.download = filename || 'ucsb-schedule.ics';
+	document.body.appendChild(link);
+	link.click();
+	document.body.removeChild(link);
+	
+	URL.revokeObjectURL(url);
+	console.log('[RateMyGaucho] ICS file downloaded:', filename);
+}
+
+function renderICSDownloadButton() {
+	// Check if button already exists
+	if (document.querySelector('.rmg-ics-download-btn')) {
+		return;
+	}
+	
+	// Parse schedule
+	const schedule = parseScheduleFromDOM();
+	
+	if (schedule.length === 0) {
+		console.log('[RateMyGaucho] No schedule to export');
+		return;
+	}
+	
+	// Determine quarter info from PASS_TIME_SCHEDULES
+	const currentDate = new Date();
+	let quarterInfo = null;
+	
+	for (const [quarterName, scheduleEvents] of Object.entries(PASS_TIME_SCHEDULES)) {
+		if (scheduleEvents && scheduleEvents.length > 0) {
+			const quarterStart = scheduleEvents[0].start;
+			const quarterEnd = scheduleEvents[scheduleEvents.length - 1].end;
+			
+			if (currentDate >= quarterStart && currentDate <= quarterEnd) {
+				quarterInfo = { name: quarterName, start: quarterStart, end: quarterEnd };
+				break;
+			}
+		}
+	}
+	
+	// If no current quarter found, use a default
+	if (!quarterInfo) {
+		const start = new Date();
+		const end = new Date(start.getTime() + 10 * 7 * 24 * 60 * 60 * 1000);
+		quarterInfo = { name: 'Current Quarter', start, end };
+	}
+	
+	// Create download button
+	const button = document.createElement('button');
+	button.className = 'rmg-ics-download-btn';
+	button.textContent = '📅 Download Schedule';
+	button.title = 'Export your schedule to Google Calendar or Apple Calendar';
+	
+	button.addEventListener('click', () => {
+		const icsContent = generateICS(schedule, quarterInfo);
+		if (icsContent) {
+			const filename = `ucsb-${quarterInfo.name.replace(/\s+/g, '-').toLowerCase()}-schedule.ics`;
+			downloadICS(icsContent, filename);
+		} else {
+			alert('Could not generate schedule. Please make sure you have courses in your schedule.');
+		}
+	});
+	
+	document.body.appendChild(button);
+}
+
+// Feature 6: Natural Language Filter
+function parseNaturalQuery(queryText) {
+	const query = queryText.toLowerCase();
+	const result = {
+		days: [],
+		timeRange: { start: null, end: null },
+		difficulty: null,
+		departments: [],
+		level: null,
+		keywords: []
+	};
+	
+	// Extract days: M, T, W, R, F
+	const dayPatterns = {
+		'monday': 'M',
+		'tuesday': 'T',
+		'wednesday': 'W',
+		'thursday': 'R',
+		'friday': 'F',
+		'mon': 'M',
+		'tue': 'T',
+		'wed': 'W',
+		'thu': 'R',
+		'thur': 'R',
+		'fri': 'F',
+		'mw': ['M', 'W'],
+		'tr': ['T', 'R'],
+		'mwf': ['M', 'W', 'F']
+	};
+	
+	for (const [pattern, day] of Object.entries(dayPatterns)) {
+		if (query.includes(pattern)) {
+			if (Array.isArray(day)) {
+				result.days.push(...day);
+			} else {
+				result.days.push(day);
+			}
+		}
+	}
+	
+	// Extract time of day
+	if (query.includes('morning') || query.includes('am')) {
+		result.timeRange = { start: 0, end: 12 * 60 }; // before noon
+	} else if (query.includes('afternoon')) {
+		result.timeRange = { start: 12 * 60, end: 17 * 60 }; // 12pm-5pm
+	} else if (query.includes('evening') || query.includes('night')) {
+		result.timeRange = { start: 17 * 60, end: 23 * 60 }; // after 5pm
+	}
+	
+	// Extract specific times
+	const afterMatch = query.match(/after\s+(\d{1,2})\s*(pm|am)?/);
+	if (afterMatch) {
+		let hour = parseInt(afterMatch[1], 10);
+		const ampm = afterMatch[2] || '';
+		if (ampm === 'pm' && hour < 12) hour += 12;
+		else if (ampm === 'am' && hour === 12) hour = 0;
+		result.timeRange.start = hour * 60;
+	}
+	
+	const beforeMatch = query.match(/before\s+(\d{1,2})\s*(pm|am)?/);
+	if (beforeMatch) {
+		let hour = parseInt(beforeMatch[1], 10);
+		const ampm = beforeMatch[2] || '';
+		if (ampm === 'pm' && hour < 12) hour += 12;
+		else if (ampm === 'am' && hour === 12) hour = 0;
+		result.timeRange.end = hour * 60;
+	}
+	
+	// Extract difficulty
+	if (query.includes('easy') || query.includes('easier')) {
+		result.difficulty = 'easy';
+	} else if (query.includes('hard') || query.includes('difficult')) {
+		result.difficulty = 'hard';
+	} else if (query.includes('moderate') || query.includes('medium')) {
+		result.difficulty = 'moderate';
+	}
+	
+	// Extract department codes (e.g., CMPSC, MATH, PSTAT)
+	const deptPattern = /\b([A-Z]{2,8})\b/g;
+	let deptMatch;
+	while ((deptMatch = deptPattern.exec(queryText)) !== null) {
+		result.departments.push(deptMatch[1]);
+	}
+	
+	// Extract course level
+	if (query.includes('upper division') || query.includes('upper-division')) {
+		result.level = 'upper';
+	} else if (query.includes('lower division') || query.includes('lower-division')) {
+		result.level = 'lower';
+	}
+	
+	// Extract keywords (remove common words and already-matched patterns)
+	const stopWords = ['a', 'an', 'the', 'is', 'are', 'was', 'were', 'on', 'in', 'at', 'to', 'for', 'of', 'with', 'class', 'classes', 'course', 'courses'];
+	const words = queryText.toLowerCase()
+		.replace(/[^\w\s]/g, ' ')
+		.split(/\s+/)
+		.filter(word => word.length > 2 && !stopWords.includes(word));
+	
+	// Remove already matched patterns
+	const matched = [...result.days, ...result.departments, result.difficulty, result.level].filter(Boolean);
+	result.keywords = words.filter(word => !matched.some(m => String(m).toLowerCase().includes(word)));
+	
+	return result;
+}
+
+function filterCoursesNLP(query, courseLookup, deptAverages) {
+	if (!courseLookup) {
+		return [];
+	}
+	
+	const parsed = parseNaturalQuery(query);
+	const results = [];
+	
+	for (const [courseCode, courseList] of courseLookup.entries()) {
+		for (const course of courseList) {
+			let score = 0;
+			let matches = [];
+			
+			// Match department
+			const dept = extractDepartmentFromCourse(course.courseName);
+			if (parsed.departments.length > 0) {
+				if (parsed.departments.includes(dept)) {
+					score += 10;
+					matches.push('dept');
+				} else {
+					continue; // Skip if department doesn't match
+				}
+			}
+			
+			// Match course level
+			if (parsed.level) {
+				const courseNum = parseInt(course.courseName.match(/\d+/)?.[0] || '0', 10);
+				if (parsed.level === 'upper' && courseNum >= 100) {
+					score += 5;
+					matches.push('level');
+				} else if (parsed.level === 'lower' && courseNum < 100) {
+					score += 5;
+					matches.push('level');
+				}
+			}
+			
+			// Match difficulty based on GPA
+			if (parsed.difficulty && course.gradeStats?.average) {
+				const gpa = course.gradeStats.average;
+				if (parsed.difficulty === 'easy' && gpa > 3.5) {
+					score += 8;
+					matches.push('difficulty');
+				} else if (parsed.difficulty === 'hard' && gpa < 2.8) {
+					score += 8;
+					matches.push('difficulty');
+				} else if (parsed.difficulty === 'moderate' && gpa >= 2.8 && gpa <= 3.5) {
+					score += 8;
+					matches.push('difficulty');
+				}
+			}
+			
+			// Match keywords in reviews or course name
+			if (parsed.keywords.length > 0) {
+				const searchText = [
+					course.courseName,
+					...(course.recentReviews || [])
+				].join(' ').toLowerCase();
+				
+				for (const keyword of parsed.keywords) {
+					if (searchText.includes(keyword)) {
+						score += 2;
+						matches.push('keyword');
+					}
+				}
+			}
+			
+			// Basic relevance if no specific criteria
+			if (score === 0) {
+				score = 1;
+			}
+			
+			if (score > 0) {
+				results.push({
+					course,
+					score,
+					matches
+				});
+			}
+		}
+	}
+	
+	// Sort by score and return top 20
+	results.sort((a, b) => b.score - a.score);
+	return results.slice(0, 20);
+}
+
+function renderNLPSearchBar() {
+	// Check if search bar already exists
+	if (document.querySelector('.rmg-nlp-search')) {
+		return;
+	}
+	
+	const searchContainer = document.createElement('div');
+	searchContainer.className = 'rmg-nlp-search';
+	
+	const searchInput = document.createElement('input');
+	searchInput.type = 'text';
+	searchInput.className = 'rmg-nlp-input';
+	searchInput.placeholder = 'Try: "Easy CMPSC classes on MWF mornings"';
+	
+	const resultsPanel = document.createElement('div');
+	resultsPanel.className = 'rmg-nlp-results';
+	resultsPanel.style.display = 'none';
+	
+	searchInput.addEventListener('input', async () => {
+		const query = searchInput.value.trim();
+		
+		if (query.length < 3) {
+			resultsPanel.style.display = 'none';
+			return;
+		}
+		
+		const unifiedData = await ensureUnifiedData();
+		const courseLookup = unifiedData?.courseLookup;
+		const deptAverages = unifiedData?.departmentAverages;
+		
+		if (!courseLookup) {
+			return;
+		}
+		
+		const results = filterCoursesNLP(query, courseLookup, deptAverages);
+		
+		if (results.length === 0) {
+			resultsPanel.innerHTML = '<div class="rmg-nlp-result-item rmg-nlp-no-results">No courses found matching your query</div>';
+			resultsPanel.style.display = 'block';
+			return;
+		}
+		
+		resultsPanel.innerHTML = '';
+		
+		for (const result of results) {
+			const item = document.createElement('div');
+			item.className = 'rmg-nlp-result-item';
+			
+			const courseCode = document.createElement('div');
+			courseCode.className = 'rmg-nlp-result-code';
+			courseCode.textContent = result.course.courseName;
+			item.appendChild(courseCode);
+			
+			const professor = document.createElement('div');
+			professor.className = 'rmg-nlp-result-prof';
+			professor.textContent = `Professor: ${result.course.csvProfessor || 'N/A'}`;
+			item.appendChild(professor);
+			
+			if (result.course.gradeStats?.average) {
+				const gpa = document.createElement('div');
+				gpa.className = 'rmg-nlp-result-gpa';
+				gpa.textContent = `Avg GPA: ${result.course.gradeStats.average.toFixed(2)}`;
+				item.appendChild(gpa);
+				
+				// Add grade inflation if available
+				if (deptAverages) {
+					const inflationIndex = computeGradeInflationIndex(result.course, deptAverages);
+					if (inflationIndex) {
+						const inflation = document.createElement('span');
+						inflation.className = 'rmg-nlp-result-inflation';
+						inflation.textContent = ` (${inflationIndex.label})`;
+						gpa.appendChild(inflation);
+					}
+				}
+			}
+			
+			item.addEventListener('click', () => {
+				// Try to find and scroll to this course in the page
+				const courseElements = Array.from(document.querySelectorAll('*')).filter(el => {
+					const text = (el.textContent || '').trim();
+					return text.includes(result.course.courseName);
+				});
+				
+				if (courseElements.length > 0) {
+					courseElements[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+					courseElements[0].style.backgroundColor = 'rgba(0, 54, 96, 0.1)';
+					setTimeout(() => {
+						courseElements[0].style.backgroundColor = '';
+					}, 2000);
+				}
+				
+				resultsPanel.style.display = 'none';
+				searchInput.value = '';
+			});
+			
+			resultsPanel.appendChild(item);
+		}
+		
+		resultsPanel.style.display = 'block';
+	});
+	
+	// Close results when clicking outside
+	document.addEventListener('click', (e) => {
+		if (!searchContainer.contains(e.target)) {
+			resultsPanel.style.display = 'none';
+		}
+	});
+	
+	searchContainer.appendChild(searchInput);
+	searchContainer.appendChild(resultsPanel);
+	document.body.appendChild(searchContainer);
+}
+
+// Feature 1: GauchoOdds (Waitlist Probability)
+function computeWaitlistOdds(courseData) {
+	if (!courseData || !Array.isArray(courseData.enrollmentEntries)) {
+		return null;
+	}
+	
+	const entries = courseData.enrollmentEntries;
+	if (entries.length < 3) {
+		return null; // Not enough data for meaningful analysis
+	}
+	
+	// Analyze capacity expansion and overenrollment patterns
+	let capacityExpansions = 0;
+	let overenrollmentInstances = 0;
+	let totalCapacity = 0;
+	let totalFilled = 0;
+	let capacityCount = 0;
+	
+	for (let i = 0; i < entries.length; i++) {
+		const entry = entries[i];
+		
+		if (!Number.isFinite(entry.capacity) || !Number.isFinite(entry.filled)) {
+			continue;
+		}
+		
+		totalCapacity += entry.capacity;
+		totalFilled += entry.filled;
+		capacityCount++;
+		
+		// Check for overenrollment (filled > capacity)
+		if (entry.filled > entry.capacity) {
+			overenrollmentInstances++;
+		}
+		
+		// Check for capacity expansion compared to previous entry
+		if (i > 0 && Number.isFinite(entries[i-1].capacity) && entries[i-1].capacity > 0) {
+			const capacityChange = ((entry.capacity - entries[i-1].capacity) / entries[i-1].capacity) * 100;
+			if (capacityChange >= 5) { // 5% or more expansion
+				capacityExpansions++;
+			}
+		}
+	}
+	
+	if (capacityCount === 0) {
+		return null;
+	}
+	
+	// Calculate metrics
+	const avgCapacity = totalCapacity / capacityCount;
+	const avgFilled = totalFilled / capacityCount;
+	const avgUtilization = (avgFilled / avgCapacity) * 100;
+	const expansionRate = (capacityExpansions / (entries.length - 1)) * 100;
+	const overenrollmentRate = (overenrollmentInstances / capacityCount) * 100;
+	
+	// Calculate odds based on multiple factors
+	let odds = 0;
+	
+	// Factor 1: Capacity expansion history (0-40 points)
+	if (expansionRate > 30) {
+		odds += 40;
+	} else if (expansionRate > 15) {
+		odds += 30;
+	} else if (expansionRate > 5) {
+		odds += 20;
+	} else {
+		odds += 10;
+	}
+	
+	// Factor 2: Overenrollment tolerance (0-30 points)
+	if (overenrollmentRate > 40) {
+		odds += 30;
+	} else if (overenrollmentRate > 20) {
+		odds += 20;
+	} else if (overenrollmentRate > 5) {
+		odds += 10;
+	}
+	
+	// Factor 3: Average utilization (0-30 points)
+	// Lower utilization = more room = higher odds
+	if (avgUtilization < 90) {
+		odds += 30;
+	} else if (avgUtilization < 95) {
+		odds += 20;
+	} else if (avgUtilization < 100) {
+		odds += 10;
+	}
+	
+	// Ensure odds are in 0-100 range
+	odds = Math.max(0, Math.min(100, odds));
+	
+	// Determine label
+	let label;
+	let detail;
+	if (odds >= 75) {
+		label = 'Very Likely';
+		detail = 'This class frequently expands capacity or accepts overenrollment';
+	} else if (odds >= 50) {
+		label = 'Likely';
+		detail = 'This class sometimes expands capacity or has available seats';
+	} else if (odds >= 25) {
+		label = 'Possible';
+		detail = 'This class occasionally expands but fills quickly';
+	} else {
+		label = 'Unlikely';
+		detail = 'This class rarely expands and typically stays at capacity';
+	}
+	
+	return { odds, label, detail };
 }
 
 function extractTermFromCourseUrl(url) {
@@ -1426,11 +2359,23 @@ function observeAndRender() {
 		const nodes = findInstructorNodes();
 		console.log('[RateMyGaucho] instructor candidates:', nodes.length);
 		if (!nodes.length) return;
-		const lookup = await ensureRatingsLoaded();
-		const courseLookup = await ensureCoursesLoaded();
+		const unifiedData = await ensureUnifiedData();
+		const lookup = unifiedData?.ratingsLookup;
+		const courseLookup = unifiedData?.courseLookup;
+		const departmentAverages = unifiedData?.departmentAverages;
+		const prerequisiteMap = unifiedData?.prerequisiteMap;
 		if (!lookup) return;
 		const sample = nodes.slice(0, 5).map(n => (n.textContent||'').trim().replace(/\s+/g,' '));
 		console.log('[RateMyGaucho] sample candidate texts:', sample);
+		
+		// Feature 4: Run conflict detection
+		scanAndFlagConflicts();
+		
+		// Feature 5: Render ICS download button (only once per page)
+		renderICSDownloadButton();
+		
+		// Feature 6: Render NLP search bar (only once per page)
+		renderNLPSearchBar();
 		
 		let matchedCount = 0;
 		let courseFoundCount = 0;
@@ -1507,7 +2452,7 @@ function observeAndRender() {
 			}
 			
 			courseFoundCount++;
-			renderCard(node, match, gatedCourseData);
+			renderCard(node, match, gatedCourseData, departmentAverages, prerequisiteMap);
 		}
 		
 		console.log(`[RateMyGaucho] Summary: ${matchedCount}/${totalProcessed} instructors matched, ${courseFoundCount}/${matchedCount} with course data`);
@@ -1737,7 +2682,7 @@ function matchInstructor(info, lookup) {
 	return best;
 }
 
-function renderCard(anchorNode, record, courseData = null) {
+function renderCard(anchorNode, record, courseData = null, departmentAverages = null, prerequisiteMap = null) {
 	const card = document.createElement('div');
 	const rating = Number(record.rmpScore || 0);
 	card.className = 'rmg-card ' + (rating >= 4 ? 'rmg-good' : rating >= 3 ? 'rmg-ok' : 'rmg-bad');
@@ -1838,6 +2783,33 @@ function renderCard(anchorNode, record, courseData = null) {
 		const courseName = document.createElement('div');
 		courseName.className = 'rmg-course-name';
 		courseName.textContent = courseData.courseName;
+		
+		// Feature 3: Add prerequisite tooltip
+		if (prerequisiteMap) {
+			const normalizedCourse = normalizeCourseCode(courseData.courseName);
+			const prereqChain = buildPrereqChain(normalizedCourse, prerequisiteMap);
+			
+			if (prereqChain.prereqs && prereqChain.prereqs.length > 0) {
+				// Create tooltip container
+				const tooltip = document.createElement('div');
+				tooltip.className = 'rmg-prereq-tooltip';
+				
+				const tooltipTitle = document.createElement('div');
+				tooltipTitle.className = 'rmg-prereq-tooltip-title';
+				tooltipTitle.textContent = 'Prerequisites:';
+				tooltip.appendChild(tooltipTitle);
+				
+				const chainDisplay = document.createElement('div');
+				chainDisplay.className = 'rmg-prereq-chain';
+				const chainText = renderPrereqChain(prereqChain);
+				chainDisplay.textContent = chainText;
+				tooltip.appendChild(chainDisplay);
+				
+				courseName.appendChild(tooltip);
+				courseName.classList.add('rmg-course-name--has-prereqs');
+			}
+		}
+		
 		courseInfo.appendChild(courseName);
 
 		if (courseData.gradingBasis) {
@@ -1870,6 +2842,29 @@ function renderCard(anchorNode, record, courseData = null) {
 			const gradeTitle = document.createElement('div');
 			gradeTitle.className = 'rmg-course-detail rmg-course-detail--title';
 			gradeTitle.textContent = 'Grade distribution';
+			
+			// Feature 2: Add grade inflation index
+			if (departmentAverages) {
+				const inflationIndex = computeGradeInflationIndex(courseData, departmentAverages);
+				if (inflationIndex) {
+					const inflationChip = document.createElement('span');
+					inflationChip.className = 'rmg-grade-inflation';
+					
+					if (Math.abs(inflationIndex.delta) < 0.15) {
+						inflationChip.classList.add('rmg-grade-inflation--neutral');
+					} else if (inflationIndex.delta > 0) {
+						inflationChip.classList.add('rmg-grade-inflation--easier');
+					} else {
+						inflationChip.classList.add('rmg-grade-inflation--harder');
+					}
+					
+					inflationChip.textContent = inflationIndex.label;
+					inflationChip.title = `Course GPA: ${inflationIndex.courseGPA.toFixed(2)}, Dept Avg: ${inflationIndex.deptAvg.toFixed(2)}`;
+					gradeTitle.appendChild(document.createTextNode(' '));
+					gradeTitle.appendChild(inflationChip);
+				}
+			}
+			
 			gradeSection.appendChild(gradeTitle);
 
 			if (gradeHasPercents) {
@@ -1987,6 +2982,36 @@ function renderCard(anchorNode, record, courseData = null) {
 			}
 
 			enrollmentSection.appendChild(chart);
+			
+			// Feature 1: Add waitlist odds display
+			const waitlistOdds = computeWaitlistOdds(courseData);
+			if (waitlistOdds) {
+				const oddsWrap = document.createElement('div');
+				oddsWrap.className = 'rmg-waitlist-odds';
+				
+				const oddsLabel = document.createElement('div');
+				oddsLabel.className = 'rmg-waitlist-odds-label';
+				oddsLabel.textContent = 'Waitlist Probability:';
+				oddsWrap.appendChild(oddsLabel);
+				
+				const oddsBadge = document.createElement('div');
+				oddsBadge.className = 'rmg-waitlist-odds-badge';
+				if (waitlistOdds.odds >= 75) {
+					oddsBadge.classList.add('rmg-waitlist-odds-badge--high');
+				} else if (waitlistOdds.odds >= 50) {
+					oddsBadge.classList.add('rmg-waitlist-odds-badge--medium');
+				} else if (waitlistOdds.odds >= 25) {
+					oddsBadge.classList.add('rmg-waitlist-odds-badge--low');
+				} else {
+					oddsBadge.classList.add('rmg-waitlist-odds-badge--very-low');
+				}
+				oddsBadge.textContent = `${Math.round(waitlistOdds.odds)}% ${waitlistOdds.label}`;
+				oddsBadge.title = waitlistOdds.detail;
+				oddsWrap.appendChild(oddsBadge);
+				
+				enrollmentSection.appendChild(oddsWrap);
+			}
+			
 			courseInfo.appendChild(enrollmentSection);
 		}
 
