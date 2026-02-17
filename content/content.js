@@ -2106,137 +2106,121 @@ function computeSignalIcons(reviews) {
 	return result;
 }
 
-function buildPersonaRail(insights) {
+function buildPersonaTopBar(insights) {
 	if (!insights) return null;
-	const rail = document.createElement('aside');
-	rail.className = 'rmg-card-rail';
+	const topBar = document.createElement('div');
+	topBar.className = 'rmg-card-top-bar';
 	let contentBlocks = 0;
 
+	// Trait chips (inline pills)
 	if (Array.isArray(insights.traitChips) && insights.traitChips.length) {
-		const title = document.createElement('div');
-		title.className = 'rmg-rail-section-title';
-		title.textContent = 'Noticed in reviews';
-		rail.appendChild(title);
-
 		const chips = document.createElement('div');
-		chips.className = 'rmg-rail-chips';
+		chips.className = 'rmg-top-bar-chips';
 		for (const chip of insights.traitChips) {
 			const chipEl = document.createElement('span');
-			chipEl.className = 'rmg-rail-chip';
-			if (chip.tone) chipEl.classList.add(`rmg-rail-chip--${chip.tone}`);
+			chipEl.className = 'rmg-top-bar-chip';
+			if (chip.tone) chipEl.classList.add(`rmg-top-bar-chip--${chip.tone}`);
 			chipEl.textContent = chip.label;
 			chips.appendChild(chipEl);
 		}
-		rail.appendChild(chips);
+		topBar.appendChild(chips);
 		contentBlocks++;
 	}
 
+	// Vibe summary (inline text)
 	if (insights.vibeSummary) {
 		const vibe = document.createElement('div');
-		vibe.className = 'rmg-rail-vibe';
-		vibe.textContent = insights.vibeSummary;
-		rail.appendChild(vibe);
+		vibe.className = 'rmg-top-bar-vibe';
+		vibe.textContent = `"${insights.vibeSummary}"`;
+		topBar.appendChild(vibe);
 		contentBlocks++;
 	}
 
+	// Effort bar (horizontal, compact)
 	if (insights.effort) {
 		const effort = document.createElement('div');
-		effort.className = 'rmg-rail-effort';
-		const effortTitle = document.createElement('div');
-		effortTitle.className = 'rmg-rail-section-title';
-		effortTitle.textContent = 'Effort';
-		effort.appendChild(effortTitle);
-
+		effort.className = 'rmg-top-bar-effort';
+		
+		const effortLabel = document.createElement('span');
+		effortLabel.className = 'rmg-top-bar-effort-label';
+		effortLabel.textContent = insights.effort.label;
+		effort.appendChild(effortLabel);
+		
 		const bar = document.createElement('div');
-		bar.className = 'rmg-rail-effort-bar';
+		bar.className = 'rmg-top-bar-effort-bar';
 		const fill = document.createElement('span');
 		fill.style.setProperty('--effort-fill', `${Math.round(clamp01(insights.effort.score) * 100)}%`);
 		if (insights.effort.detail) fill.title = insights.effort.detail;
 		bar.appendChild(fill);
 		effort.appendChild(bar);
 
-		const label = document.createElement('div');
-		label.className = 'rmg-rail-effort-label';
-		label.textContent = insights.effort.label;
-		effort.appendChild(label);
-
-		rail.appendChild(effort);
+		topBar.appendChild(effort);
 		contentBlocks++;
 	}
 
-	if (Array.isArray(insights.signals) && insights.signals.length) {
-		const signalsWrapper = document.createElement('div');
-		signalsWrapper.className = 'rmg-rail-signals';
-		const signalsTitle = document.createElement('div');
-		signalsTitle.className = 'rmg-rail-section-title';
-		signalsTitle.textContent = 'Signals';
-		signalsWrapper.appendChild(signalsTitle);
-
-		const signalsList = document.createElement('div');
-		signalsList.className = 'rmg-rail-signal-list';
-		for (const signal of insights.signals) {
-			const signalEl = document.createElement('div');
-			signalEl.className = 'rmg-rail-signal';
-			if (signal.tone) signalEl.classList.add(`rmg-rail-signal--${signal.tone}`);
-			if (signal.detail) signalEl.title = signal.detail;
-
-			const icon = document.createElement('span');
-			icon.className = 'rmg-rail-signal-icon';
-			icon.textContent = signal.icon || '•';
-			signalEl.appendChild(icon);
-
-			const label = document.createElement('span');
-			label.className = 'rmg-rail-signal-label';
-			label.textContent = signal.label;
-			signalEl.appendChild(label);
-
-			signalsList.appendChild(signalEl);
-		}
-		signalsWrapper.appendChild(signalsList);
-		rail.appendChild(signalsWrapper);
-		contentBlocks++;
-	}
-
+	// Pace and Assessment dials (smaller, inline)
 	const dialCandidates = [];
 	if (insights.pace) dialCandidates.push({ key: 'Pace', ...insights.pace });
 	if (insights.assessment) dialCandidates.push({ key: 'Assessments', ...insights.assessment });
 	if (dialCandidates.length) {
 		const dials = document.createElement('div');
-		dials.className = 'rmg-rail-dials';
+		dials.className = 'rmg-top-bar-dials';
 		for (const dialInfo of dialCandidates) {
 			const dial = document.createElement('div');
-			dial.className = 'rmg-rail-dial';
-
-			const heading = document.createElement('div');
-			heading.className = 'rmg-rail-dial-label';
-			heading.textContent = dialInfo.key;
-			dial.appendChild(heading);
+			dial.className = 'rmg-top-bar-dial';
+			if (dialInfo.detail) dial.title = dialInfo.detail;
 
 			const ring = document.createElement('div');
-			ring.className = 'rmg-rail-dial-ring';
+			ring.className = 'rmg-top-bar-dial-ring';
 			ring.style.setProperty('--dial-progress', `${Math.round(clamp01(dialInfo.score) * 100)}%`);
-			if (dialInfo.detail) ring.title = dialInfo.detail;
 
 			const emblem = document.createElement('span');
-			emblem.className = 'rmg-rail-dial-emblem';
+			emblem.className = 'rmg-top-bar-dial-emblem';
 			emblem.textContent = dialInfo.icon || dialInfo.shortLabel || dialInfo.label;
 			ring.appendChild(emblem);
 
 			dial.appendChild(ring);
 
-			const description = document.createElement('div');
-			description.className = 'rmg-rail-dial-desc';
-			description.textContent = dialInfo.label;
-			dial.appendChild(description);
+			const label = document.createElement('div');
+			label.className = 'rmg-top-bar-dial-label';
+			label.textContent = dialInfo.key;
+			dial.appendChild(label);
 
 			dials.appendChild(dial);
 		}
-		rail.appendChild(dials);
+		topBar.appendChild(dials);
+		contentBlocks++;
+	}
+
+	// Signal icons (horizontal row)
+	if (Array.isArray(insights.signals) && insights.signals.length) {
+		const signalsWrapper = document.createElement('div');
+		signalsWrapper.className = 'rmg-top-bar-signals';
+		
+		for (const signal of insights.signals) {
+			const signalEl = document.createElement('div');
+			signalEl.className = 'rmg-top-bar-signal';
+			if (signal.tone) signalEl.classList.add(`rmg-top-bar-signal--${signal.tone}`);
+			if (signal.detail) signalEl.title = signal.detail;
+
+			const icon = document.createElement('span');
+			icon.className = 'rmg-top-bar-signal-icon';
+			icon.textContent = signal.icon || '•';
+			signalEl.appendChild(icon);
+
+			const label = document.createElement('span');
+			label.className = 'rmg-top-bar-signal-label';
+			label.textContent = signal.label;
+			signalEl.appendChild(label);
+
+			signalsWrapper.appendChild(signalEl);
+		}
+		topBar.appendChild(signalsWrapper);
 		contentBlocks++;
 	}
 
 	if (!contentBlocks) return null;
-	return rail;
+	return topBar;
 }
 
 function clamp01(value) {
@@ -2682,6 +2666,178 @@ function matchInstructor(info, lookup) {
 	return best;
 }
 
+function createEnrollmentLineGraph(enrollmentData) {
+	const container = document.createElement('div');
+	container.className = 'rmg-enrollment-graph';
+	
+	if (!enrollmentData || enrollmentData.length === 0) {
+		return container;
+	}
+	
+	// Create canvas for the graph
+	const canvas = document.createElement('canvas');
+	canvas.className = 'rmg-enrollment-canvas';
+	const canvasHeight = 200;
+	const canvasWidth = 600;
+	canvas.width = canvasWidth;
+	canvas.height = canvasHeight;
+	container.appendChild(canvas);
+	
+	const ctx = canvas.getContext('2d');
+	
+	// Graph dimensions
+	const padding = { top: 20, right: 20, bottom: 40, left: 45 };
+	const graphWidth = canvasWidth - padding.left - padding.right;
+	const graphHeight = canvasHeight - padding.top - padding.bottom;
+	
+	// Find max value for y-axis scaling
+	const maxPercent = Math.max(110, ...enrollmentData.map(d => d.percentFull || 0));
+	
+	// Draw background
+	ctx.fillStyle = '#ffffff';
+	ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+	
+	// Draw 100% reference line (dashed, light gray)
+	ctx.setLineDash([5, 5]);
+	ctx.strokeStyle = '#cbd5e1';
+	ctx.lineWidth = 1;
+	const y100 = padding.top + graphHeight * (1 - (100 / maxPercent));
+	ctx.beginPath();
+	ctx.moveTo(padding.left, y100);
+	ctx.lineTo(padding.left + graphWidth, y100);
+	ctx.stroke();
+	ctx.setLineDash([]);
+	
+	// Draw 100% label
+	ctx.fillStyle = '#94a3b8';
+	ctx.font = '10px system-ui, -apple-system, sans-serif';
+	ctx.textAlign = 'right';
+	ctx.fillText('100%', padding.left - 5, y100 + 4);
+	
+	// Prepare data points
+	const points = enrollmentData.map((entry, i) => {
+		const x = padding.left + (i / (enrollmentData.length - 1)) * graphWidth;
+		const percent = entry.percentFull || 0;
+		const y = padding.top + graphHeight * (1 - (percent / maxPercent));
+		return { x, y, percent, entry };
+	});
+	
+	// Draw the line
+	ctx.lineWidth = 2.5;
+	ctx.lineJoin = 'round';
+	ctx.lineCap = 'round';
+	
+	for (let i = 0; i < points.length - 1; i++) {
+		const p1 = points[i];
+		const p2 = points[i + 1];
+		
+		// Determine color based on percentage
+		let color;
+		const avgPercent = (p1.percent + p2.percent) / 2;
+		if (avgPercent > 100) {
+			color = '#f97316'; // Orange for over-enrolled
+		} else if (avgPercent >= 90) {
+			color = '#22c55e'; // Green for full
+		} else {
+			color = '#0ea5e9'; // Blue for normal
+		}
+		
+		ctx.strokeStyle = color;
+		ctx.beginPath();
+		ctx.moveTo(p1.x, p1.y);
+		ctx.lineTo(p2.x, p2.y);
+		ctx.stroke();
+	}
+	
+	// Draw data points (circles)
+	points.forEach(point => {
+		let color;
+		if (point.percent > 100) {
+			color = '#b91c1c'; // Red for over
+		} else if (point.percent >= 90) {
+			color = '#22c55e'; // Green for full
+		} else {
+			color = '#0ea5e9'; // Blue for normal
+		}
+		
+		ctx.fillStyle = color;
+		ctx.beginPath();
+		ctx.arc(point.x, point.y, 4, 0, 2 * Math.PI);
+		ctx.fill();
+		
+		// White border for data points
+		ctx.strokeStyle = '#ffffff';
+		ctx.lineWidth = 2;
+		ctx.stroke();
+	});
+	
+	// Draw x-axis labels (phase labels)
+	ctx.fillStyle = '#475569';
+	ctx.font = '11px system-ui, -apple-system, sans-serif';
+	ctx.textAlign = 'center';
+	
+	points.forEach(point => {
+		const label = point.entry.phaseLabel || point.entry.phaseKey || '';
+		ctx.fillText(label, point.x, canvasHeight - 10);
+		
+		// Draw date below phase label
+		if (point.entry.displayDate) {
+			ctx.fillStyle = '#94a3b8';
+			ctx.font = '9px system-ui, -apple-system, sans-serif';
+			ctx.fillText(point.entry.displayDate, point.x, canvasHeight - 20);
+			ctx.fillStyle = '#475569';
+			ctx.font = '11px system-ui, -apple-system, sans-serif';
+		}
+	});
+	
+	// Create tooltip overlay
+	const tooltip = document.createElement('div');
+	tooltip.className = 'rmg-enrollment-tooltip';
+	tooltip.style.display = 'none';
+	container.appendChild(tooltip);
+	
+	// Add hover interactions
+	canvas.addEventListener('mousemove', (e) => {
+		const rect = canvas.getBoundingClientRect();
+		const mouseX = e.clientX - rect.left;
+		const mouseY = e.clientY - rect.top;
+		
+		// Find nearest point
+		let nearestPoint = null;
+		let minDist = Infinity;
+		
+		points.forEach(point => {
+			const dist = Math.sqrt(Math.pow(mouseX - point.x, 2) + Math.pow(mouseY - point.y, 2));
+			if (dist < 20 && dist < minDist) {
+				minDist = dist;
+				nearestPoint = point;
+			}
+		});
+		
+		if (nearestPoint) {
+			canvas.style.cursor = 'pointer';
+			const phase = nearestPoint.entry.phaseLabel || nearestPoint.entry.phaseKey || 'Timeline';
+			const date = nearestPoint.entry.displayDate || '';
+			const detail = nearestPoint.entry.detail || '';
+			
+			tooltip.innerHTML = `<strong>${phase}</strong>${date ? ' — ' + date : ''}<br>${detail}`;
+			tooltip.style.display = 'block';
+			tooltip.style.left = `${e.clientX - rect.left + 10}px`;
+			tooltip.style.top = `${e.clientY - rect.top - 10}px`;
+		} else {
+			canvas.style.cursor = 'default';
+			tooltip.style.display = 'none';
+		}
+	});
+	
+	canvas.addEventListener('mouseleave', () => {
+		tooltip.style.display = 'none';
+		canvas.style.cursor = 'default';
+	});
+	
+	return container;
+}
+
 function renderCard(anchorNode, record, courseData = null, departmentAverages = null, prerequisiteMap = null) {
 	const card = document.createElement('div');
 	const rating = Number(record.rmpScore || 0);
@@ -2693,17 +2849,15 @@ function renderCard(anchorNode, record, courseData = null, departmentAverages = 
 		return `${value.toFixed(decimals)}%`;
 	};
 
-	const insights = derivePersonaInsights(courseData, record);
-	const rail = buildPersonaRail(insights);
-	if (rail) {
-		card.appendChild(rail);
-	} else {
-		card.classList.add('rmg-card--no-rail');
-	}
-
 	const main = document.createElement('div');
 	main.className = 'rmg-card-main';
 	card.appendChild(main);
+	
+	const insights = derivePersonaInsights(courseData, record);
+	const topBar = buildPersonaTopBar(insights);
+	if (topBar) {
+		main.appendChild(topBar);
+	}
 
 	const badge = document.createElement('span');
 	badge.className = 'rmg-badge';
@@ -2888,61 +3042,8 @@ function renderCard(anchorNode, record, courseData = null, departmentAverages = 
 			enrollmentTitle.textContent = 'Historic enrollment';
 			enrollmentSection.appendChild(enrollmentTitle);
 
-			const chart = document.createElement('div');
-			chart.className = 'rmg-enrollment-chart';
-
-			for (const entry of enrollmentForChart) {
-				const row = document.createElement('div');
-				row.className = 'rmg-enrollment-row';
-				if (Number.isFinite(entry.percentFull) && entry.percentFull >= 99) {
-					row.classList.add('rmg-enrollment-row--full');
-				}
-				if (Number.isFinite(entry.percentFull) && entry.percentFull > 100) {
-					row.classList.add('rmg-enrollment-row--over');
-				}
-
-				const metaWrap = document.createElement('div');
-				metaWrap.className = 'rmg-enrollment-meta';
-				const phase = document.createElement('div');
-				phase.className = 'rmg-enrollment-phase';
-				phase.textContent = entry.phaseLabel || entry.phaseKey || 'Timeline';
-				metaWrap.appendChild(phase);
-				if (entry.displayDate) {
-					const date = document.createElement('div');
-					date.className = 'rmg-enrollment-date';
-					date.textContent = entry.displayDate;
-					metaWrap.appendChild(date);
-				}
-				row.appendChild(metaWrap);
-
-				const barWrap = document.createElement('div');
-				barWrap.className = 'rmg-enrollment-bar';
-
-				const capacityTrack = document.createElement('span');
-				capacityTrack.className = 'rmg-enrollment-capacity-track';
-				barWrap.appendChild(capacityTrack);
-
-				const fill = document.createElement('span');
-				fill.className = 'rmg-enrollment-fill';
-				const percentFull = Number.isFinite(entry.percentFull) ? Math.max(0, Math.min(entry.percentFull, 110)) : 0;
-				fill.style.setProperty('--rmg-enrollment-fill', `${Math.min(percentFull, 100)}%`);
-				fill.title = entry.display || entry.detail || '';
-				capacityTrack.appendChild(fill);
-
-				const detail = document.createElement('div');
-				detail.className = 'rmg-enrollment-capacity';
-				detail.textContent = entry.detail || '';
-
-				const visualRow = document.createElement('div');
-				visualRow.className = 'rmg-enrollment-visual';
-				visualRow.appendChild(barWrap);
-				visualRow.appendChild(detail);
-				row.appendChild(visualRow);
-
-				chart.appendChild(row);
-			}
-
-			enrollmentSection.appendChild(chart);
+			const graph = createEnrollmentLineGraph(enrollmentForChart);
+			enrollmentSection.appendChild(graph);
 			
 			// Feature 1: Add waitlist odds display
 			const waitlistOdds = computeWaitlistOdds(courseData);
