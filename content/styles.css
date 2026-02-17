@@ -5,7 +5,7 @@
 	position: relative;
 	display: flex;
 	flex-direction: column;
-	padding: 12px 18px 12px 12px;
+	padding: 8px 14px 8px 8px;
 	border-radius: 10px;
 	background: #fff;
 	border: 1px solid rgba(0,0,0,0.06);
@@ -15,6 +15,7 @@
 	width: 100%;
 	max-width: 750px;
 	flex: 0 1 auto;
+	gap: 8px;
 }
 
 .rmg-card--no-rail {
@@ -45,7 +46,7 @@
 .rmg-card-main {
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
+	gap: 4px;
 	flex: 1;
 	min-width: 0;
 	padding-right: 0px;
@@ -171,8 +172,8 @@
 
 /* Course information styling */
 .rmg-course-info {
-	margin-top: 4px;
-	padding: 8px;
+	margin-top: 2px;
+	padding: 6px;
 	background: #f8f9fa;
 	border-radius: 6px;
 	border: 1px solid rgba(0,0,0,0.08);
@@ -182,16 +183,16 @@
 }
 
 .rmg-course-section {
-	margin-top: 8px;
+	margin-top: 4px;
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
+	gap: 3px;
 }
 
 .rmg-course-name {
 	font-weight: 600;
 	color: #003660;
-	margin-bottom: 4px;
+	margin-bottom: 2px;
 	font-size: 14px;
 }
 
@@ -212,7 +213,7 @@
 }
 
 .rmg-course-reviews {
-	margin-top: 6px;
+	margin-top: 3px;
 }
 
 .rmg-course-reviews-title {
@@ -226,7 +227,7 @@
 	font-size: 11px;
 	color: #555;
 	font-style: italic;
-	margin-bottom: 3px;
+	margin-bottom: 2px;
 	line-height: 1.3;
 	padding-left: 8px;
 	border-left: 2px solid #ddd;
@@ -243,14 +244,14 @@
 .rmg-grade-chart {
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
+	gap: 3px;
 }
 
 .rmg-grade-bar {
 	display: grid;
 	grid-template-columns: 56px 150px 1fr;
 	align-items: center;
-	gap: 12px;
+	gap: 8px;
 	font-size: 11px;
 	color: #1f2937;
 }
@@ -288,17 +289,17 @@
 
 .rmg-enrollment-graph {
 	position: relative;
-	margin: 8px 0;
+	margin: 6px 0;
 	background: #ffffff;
 	border-radius: 8px;
-	padding: 10px;
+	padding: 8px;
 	border: 1px solid rgba(0,0,0,0.08);
 }
 
 .rmg-enrollment-canvas {
 	display: block;
 	width: 100%;
-	height: 200px;
+	height: 140px;
 }
 
 .rmg-enrollment-tooltip {
@@ -326,19 +327,19 @@
 .rmg-card-top-bar {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 12px;
+	gap: 8px;
 	align-items: center;
-	padding: 8px 10px;
+	padding: 6px 8px;
 	background: #f1f5f9;
 	border-radius: 8px;
 	border: 1px solid rgba(15,23,42,0.08);
-	margin-bottom: 10px;
+	margin-bottom: 6px;
 }
 
 .rmg-top-bar-chips {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 6px;
+	gap: 4px;
 }
 
 .rmg-top-bar-chip {
@@ -395,7 +396,7 @@
 
 .rmg-top-bar-dials {
 	display: flex;
-	gap: 10px;
+	gap: 6px;
 	align-items: center;
 }
 
@@ -507,8 +508,8 @@
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	margin-top: 8px;
-	padding: 6px 0;
+	margin-top: 4px;
+	padding: 3px 0;
 }
 
 .rmg-waitlist-odds-label {

@@ -2332,6 +2332,10 @@ function makeKey(last, first, dept) {
 function observeAndRender() {
 	const observer = new MutationObserver(() => scheduleScan());
 	observer.observe(document, { childList: true, subtree: true });
+	
+	// Render NLP search bar immediately on any GOLD page, don't wait for instructor nodes
+	renderNLPSearchBar();
+	
 	scheduleScan();
 
 	async function scheduleScan() {
@@ -2677,7 +2681,7 @@ function createEnrollmentLineGraph(enrollmentData) {
 	// Create canvas for the graph
 	const canvas = document.createElement('canvas');
 	canvas.className = 'rmg-enrollment-canvas';
-	const canvasHeight = 200;
+	const canvasHeight = 140;
 	const canvasWidth = 600;
 	canvas.width = canvasWidth;
 	canvas.height = canvasHeight;
