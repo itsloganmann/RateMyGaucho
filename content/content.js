@@ -866,12 +866,66 @@ function parseNaturalQuery(queryText) {
 		result.difficulty = 'moderate';
 	}
 	
-	// Extract department codes (e.g., CMPSC, MATH, PSTAT)
+	// Extract exact course codes first (e.g., "CMPSC 130A", "MATH 2A")
+	result.exactCourseCode = null;
+	const courseCodePattern = /\b([A-Z]{2,8})\s+(\d+[A-Z]*)\b/i;
+	const courseCodeMatch = queryText.match(courseCodePattern);
+	if (courseCodeMatch) {
+		result.exactCourseCode = `${courseCodeMatch[1].toUpperCase()} ${courseCodeMatch[2].toUpperCase()}`;
+	}
+	
+	// Department aliases mapping
+	const deptAliases = {
+		'cs': 'CMPSC',
+		'compsci': 'CMPSC',
+		'compeng': 'CMPEN',
+		'ee': 'ECE',
+		'me': 'ME',
+		'ce': 'CE',
+		'matsci': 'MATRL',
+		'econ': 'ECON',
+		'math': 'MATH',
+		'bio': 'BIOL',
+		'chem': 'CHEM',
+		'phys': 'PHYS',
+		'psych': 'PSY',
+		'stats': 'PSTAT',
+		'pstat': 'PSTAT',
+		'comm': 'COMM',
+		'art': 'ART',
+		'music': 'MUS',
+		'hist': 'HIST',
+		'eng': 'ENGL',
+		'phil': 'PHIL',
+		'soc': 'SOC',
+		'anth': 'ANTH',
+		'geog': 'GEOG',
+		'ling': 'LING',
+		'span': 'SPAN',
+		'french': 'FR',
+		'german': 'GER',
+		'japan': 'JAPAN',
+		'chin': 'CHIN'
+	};
+	
+	// Extract department codes from uppercase patterns (e.g., CMPSC, MATH, PSTAT)
 	const deptPattern = /\b([A-Z]{2,8})\b/g;
 	let deptMatch;
 	while ((deptMatch = deptPattern.exec(queryText)) !== null) {
 		result.departments.push(deptMatch[1]);
 	}
+	
+	// Also check for department aliases in lowercase query
+	for (const [alias, dept] of Object.entries(deptAliases)) {
+		if (query.includes(alias)) {
+			if (!result.departments.includes(dept)) {
+				result.departments.push(dept);
+			}
+		}
+	}
+	
+	// Remove duplicates
+	result.departments = [...new Set(result.departments)];
 	
 	// Extract course level
 	if (query.includes('upper division') || query.includes('upper-division')) {
@@ -907,14 +961,27 @@ function filterCoursesNLP(query, courseLookup, deptAverages) {
 			let score = 0;
 			let matches = [];
 			
-			// Match department
+			// PRIORITY 1: Exact course code match (e.g., "CMPSC 130A")
+			if (parsed.exactCourseCode) {
+				const normalizedCourseName = course.courseName.replace(/\s+/g, ' ').trim();
+				if (normalizedCourseName === parsed.exactCourseCode) {
+					score += 500; // Huge bonus for exact match
+					matches.push('exact-course');
+				} else {
+					// Skip non-matching courses when exact course code is specified
+					continue;
+				}
+			}
+			
+			// PRIORITY 2: Department match (hard filter when department is specified)
 			const dept = extractDepartmentFromCourse(course.courseName);
 			if (parsed.departments.length > 0) {
 				if (parsed.departments.includes(dept)) {
-					score += 10;
+					score += 100; // Increased from 10 to 100 to dominate other signals
 					matches.push('dept');
 				} else {
-					continue; // Skip if department doesn't match
+					// Hard skip - course not in specified department
+					continue;
 				}
 			}
 			
@@ -975,8 +1042,15 @@ function filterCoursesNLP(query, courseLookup, deptAverages) {
 		}
 	}
 	
-	// Sort by score and return top 20
-	results.sort((a, b) => b.score - a.score);
+	// Sort by score (primary) and course code (secondary for stability)
+	results.sort((a, b) => {
+		if (b.score !== a.score) {
+			return b.score - a.score;
+		}
+		// Secondary sort by course code alphabetically
+		return (a.course.courseName || '').localeCompare(b.course.courseName || '');
+	});
+	
 	return results.slice(0, 20);
 }
 
@@ -2681,7 +2755,7 @@ function createEnrollmentLineGraph(enrollmentData) {
 	// Create canvas for the graph
 	const canvas = document.createElement('canvas');
 	canvas.className = 'rmg-enrollment-canvas';
-	const canvasHeight = 140;
+	const canvasHeight = 100;
 	const canvasWidth = 600;
 	canvas.width = canvasWidth;
 	canvas.height = canvasHeight;
