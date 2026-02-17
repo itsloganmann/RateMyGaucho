@@ -5,17 +5,17 @@
 	position: relative;
 	display: flex;
 	flex-direction: column;
-	padding: 8px 14px 8px 8px;
+	padding: 6px 10px 6px 10px;
 	border-radius: 10px;
 	background: #fff;
 	border: 1px solid rgba(0,0,0,0.06);
 	box-shadow: 0 2px 6px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-	margin: 6px 0 0 -30px;
+	margin: 4px 0 0 0;
 	box-sizing: border-box;
 	width: 100%;
-	max-width: 750px;
+	max-width: 100%;
 	flex: 0 1 auto;
-	gap: 8px;
+	gap: 4px;
 }
 
 .rmg-card--no-rail {
@@ -46,7 +46,7 @@
 .rmg-card-main {
 	display: flex;
 	flex-direction: column;
-	gap: 4px;
+	gap: 2px;
 	flex: 1;
 	min-width: 0;
 	padding-right: 0px;
@@ -55,7 +55,7 @@
 .rmg-card-header {
 	display: flex;
 	align-items: center;
-	gap: 12px;
+	gap: 8px;
 	flex-wrap: wrap;
 	position: relative;
 	max-width: 100%;
@@ -64,7 +64,7 @@
 .rmg-card-rating {
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	gap: 6px;
 }
 
 .rmg-card-actions {
@@ -78,17 +78,18 @@
 
 .rmg-badge {
 	font-weight: 800;
-	padding: 4px 8px;
+	padding: 3px 6px;
 	border-radius: 8px;
-	min-width: 40px;
+	min-width: 32px;
 	text-align: center;
 	font-variant-numeric: tabular-nums;
 	letter-spacing: 0.2px;
+	font-size: 13px;
 }
 
 .rmg-subtle {
 	opacity: 0.85;
-	font-size: 12px;
+	font-size: 11px;
 	white-space: nowrap;
 }
 
@@ -111,34 +112,17 @@
 .rmg-badge--ok { background: #fff4d6; color: #7a5800; }
 .rmg-badge--bad { background: #f8d7da; color: #8a1c1c; }
 
-.rmg-subtle { opacity: 0.85; font-size: 12px; white-space: nowrap; }
-
-.rmg-link {
-	font-weight: 600;
-	color: #ffffff;
-	background: linear-gradient(180deg, #5aa0d7 0%, #2e76b7 100%);
-	border: 1px solid #2a5f8f;
-	padding: 3px 8px;
-	border-radius: 4px;
-	text-decoration: none;
-	font-size: 11px;
-	box-shadow: 0 1px 0 rgba(255,255,255,0.35) inset, 0 1px 0 rgba(0,0,0,0.05);
-	text-align: center;
-	white-space: nowrap;
-}
-.rmg-link:hover { filter: brightness(0.98); }
-
 /* Gaucho Stars */
 .rmg-stars {
 	display: inline-flex;
-	gap: 6px;
+	gap: 3px;
 	align-items: center;
 }
 
 .rmg-star-container {
 	position: relative;
-	width: 32px;
-	height: 32px;
+	width: 24px;
+	height: 24px;
 	display: inline-block;
 }
 
@@ -146,8 +130,8 @@
 	position: absolute;
 	top: 0;
 	left: 0;
-	width: 32px;
-	height: 32px;
+	width: 24px;
+	height: 24px;
 	object-fit: contain;
 	transition: filter 0.2s ease;
 }
@@ -172,8 +156,8 @@
 
 /* Course information styling */
 .rmg-course-info {
-	margin-top: 2px;
-	padding: 6px;
+	margin-top: 0;
+	padding: 4px;
 	background: #f8f9fa;
 	border-radius: 6px;
 	border: 1px solid rgba(0,0,0,0.08);
@@ -183,23 +167,23 @@
 }
 
 .rmg-course-section {
-	margin-top: 4px;
+	margin-top: 2px;
 	display: flex;
 	flex-direction: column;
-	gap: 3px;
+	gap: 2px;
 }
 
 .rmg-course-name {
 	font-weight: 600;
 	color: #003660;
-	margin-bottom: 2px;
-	font-size: 14px;
+	margin-bottom: 1px;
+	font-size: 12px;
 }
 
 .rmg-course-detail {
-	font-size: 12px;
+	font-size: 11px;
 	color: #666;
-	margin-bottom: 2px;
+	margin-bottom: 1px;
 }
 
 .rmg-course-detail--title {
@@ -213,23 +197,23 @@
 }
 
 .rmg-course-reviews {
-	margin-top: 3px;
+	margin-top: 1px;
 }
 
 .rmg-course-reviews-title {
 	font-weight: 600;
-	font-size: 12px;
+	font-size: 11px;
 	color: #003660;
-	margin-bottom: 4px;
+	margin-bottom: 2px;
 }
 
 .rmg-course-review {
-	font-size: 11px;
+	font-size: 10px;
 	color: #555;
 	font-style: italic;
-	margin-bottom: 2px;
-	line-height: 1.3;
-	padding-left: 8px;
+	margin-bottom: 1px;
+	line-height: 1.2;
+	padding-left: 6px;
 	border-left: 2px solid #ddd;
 	max-width: 100%;
 	padding-right: 8px;
@@ -244,15 +228,15 @@
 .rmg-grade-chart {
 	display: flex;
 	flex-direction: column;
-	gap: 3px;
+	gap: 2px;
 }
 
 .rmg-grade-bar {
 	display: grid;
-	grid-template-columns: 56px 150px 1fr;
+	grid-template-columns: 40px 1fr 40px;
 	align-items: center;
-	gap: 8px;
-	font-size: 11px;
+	gap: 6px;
+	font-size: 10px;
 	color: #1f2937;
 }
 
@@ -264,7 +248,7 @@
 
 .rmg-grade-bar-track {
 	position: relative;
-	height: 8px;
+	height: 6px;
 	border-radius: 999px;
 	background: rgba(37, 99, 235, 0.15);
 	overflow: hidden;
@@ -289,17 +273,17 @@
 
 .rmg-enrollment-graph {
 	position: relative;
-	margin: 6px 0;
+	margin: 2px 0;
 	background: #ffffff;
 	border-radius: 8px;
-	padding: 8px;
+	padding: 4px;
 	border: 1px solid rgba(0,0,0,0.08);
 }
 
 .rmg-enrollment-canvas {
 	display: block;
 	width: 100%;
-	height: 140px;
+	height: 100px;
 }
 
 .rmg-enrollment-tooltip {
@@ -327,13 +311,13 @@
 .rmg-card-top-bar {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 8px;
+	gap: 6px;
 	align-items: center;
-	padding: 6px 8px;
+	padding: 4px 6px;
 	background: #f1f5f9;
 	border-radius: 8px;
 	border: 1px solid rgba(15,23,42,0.08);
-	margin-bottom: 6px;
+	margin-bottom: 2px;
 }
 
 .rmg-top-bar-chips {
@@ -343,9 +327,9 @@
 }
 
 .rmg-top-bar-chip {
-	font-size: 11px;
+	font-size: 10px;
 	font-weight: 600;
-	padding: 4px 7px;
+	padding: 2px 5px;
 	border-radius: 999px;
 	background: rgba(30,64,175,0.12);
 	color: #1e3a8a;
@@ -355,7 +339,7 @@
 .rmg-top-bar-chip--caution { background: #fef3c7; color: #92400e; }
 
 .rmg-top-bar-vibe {
-	font-size: 11px;
+	font-size: 10px;
 	font-style: italic;
 	color: #374151;
 	line-height: 1.35;
@@ -369,7 +353,7 @@
 }
 
 .rmg-top-bar-effort-label {
-	font-size: 11px;
+	font-size: 10px;
 	font-weight: 600;
 	color: #1f2937;
 	white-space: nowrap;
@@ -377,8 +361,8 @@
 
 .rmg-top-bar-effort-bar {
 	position: relative;
-	width: 80px;
-	height: 8px;
+	width: 60px;
+	height: 6px;
 	border-radius: 999px;
 	background: #e2e8f0;
 	overflow: hidden;
@@ -396,7 +380,7 @@
 
 .rmg-top-bar-dials {
 	display: flex;
-	gap: 6px;
+	gap: 4px;
 	align-items: center;
 }
 
@@ -404,14 +388,14 @@
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: 3px;
+	gap: 2px;
 	text-align: center;
 }
 
 .rmg-top-bar-dial-ring {
 	position: relative;
-	width: 36px;
-	height: 36px;
+	width: 28px;
+	height: 28px;
 	border-radius: 50%;
 	background: conic-gradient(#2563eb var(--dial-progress, 0%), #e2e8f0 0);
 	display: flex;
@@ -422,7 +406,7 @@
 .rmg-top-bar-dial-ring::after {
 	content: "";
 	position: absolute;
-	inset: 6px;
+	inset: 4px;
 	background: #ffffff;
 	border-radius: 50%;
 	box-shadow: inset 0 1px 2px rgba(0,0,0,0.08);
@@ -432,7 +416,7 @@
 .rmg-top-bar-dial-emblem {
 	position: relative;
 	z-index: 1;
-	font-size: 11px;
+	font-size: 9px;
 	font-weight: 700;
 	color: #1f2937;
 	text-align: center;
@@ -441,7 +425,7 @@
 }
 
 .rmg-top-bar-dial-label {
-	font-size: 9px;
+	font-size: 8px;
 	font-weight: 600;
 	color: #64748b;
 	text-transform: uppercase;
@@ -450,7 +434,7 @@
 
 .rmg-top-bar-signals {
 	display: flex;
-	gap: 6px;
+	gap: 4px;
 	flex-wrap: wrap;
 }
 
@@ -458,11 +442,11 @@
 	display: flex;
 	align-items: center;
 	gap: 5px;
-	padding: 4px 7px;
+	padding: 2px 5px;
 	border-radius: 6px;
 	background: rgba(148, 163, 184, 0.18);
 	color: #1f2937;
-	font-size: 11px;
+	font-size: 10px;
 	font-weight: 600;
 }
 
@@ -470,7 +454,7 @@
 .rmg-top-bar-signal--caution { background: rgba(254, 215, 170, 0.7); color: #92400e; }
 
 .rmg-top-bar-signal-icon {
-	font-size: 13px;
+	font-size: 11px;
 	line-height: 1;
 }
 
@@ -507,22 +491,22 @@
 .rmg-waitlist-odds {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	margin-top: 4px;
-	padding: 3px 0;
+	gap: 6px;
+	margin-top: 2px;
+	padding: 1px 0;
 }
 
 .rmg-waitlist-odds-label {
-	font-size: 12px;
+	font-size: 11px;
 	font-weight: 600;
 	color: #003660;
 }
 
 .rmg-waitlist-odds-badge {
 	display: inline-block;
-	padding: 4px 10px;
+	padding: 2px 8px;
 	border-radius: 12px;
-	font-size: 11px;
+	font-size: 10px;
 	font-weight: 700;
 	letter-spacing: 0.3px;
 	transition: transform 0.2s ease;
@@ -560,12 +544,12 @@
 /* Feature 2: Grade Inflation Index Styles */
 .rmg-grade-inflation {
 	display: inline-block;
-	padding: 3px 8px;
+	padding: 2px 6px;
 	border-radius: 8px;
-	font-size: 10px;
+	font-size: 9px;
 	font-weight: 700;
 	letter-spacing: 0.2px;
-	margin-left: 8px;
+	margin-left: 4px;
 	cursor: help;
 	transition: transform 0.2s ease;
 }
@@ -596,11 +580,11 @@
 /* Prerequisite chain display - now shown as a visible section */
 .rmg-prereq-chain {
 	color: #475569;
-	line-height: 1.6;
+	line-height: 1.3;
 	font-family: 'Courier New', monospace;
-	font-size: 12px;
+	font-size: 11px;
 	white-space: pre-wrap;
-	padding: 4px 0;
+	padding: 2px 0;
 }
 
 .rmg-prereq-node {
