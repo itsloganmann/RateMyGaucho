@@ -3227,7 +3227,7 @@ function renderCard(anchorNode, record, courseData = null, departmentAverages = 
 			courseLink.target = '_blank';
 			courseLink.rel = 'noopener noreferrer';
 			courseLink.href = courseData.courseUrl;
-			courseLink.textContent = 'Course Info';
+			courseLink.textContent = 'UCSBPlat';
 			actions.appendChild(courseLink);
 		}
 	}
