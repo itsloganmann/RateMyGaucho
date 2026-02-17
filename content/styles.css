@@ -298,7 +298,7 @@
 .rmg-enrollment-canvas {
 	display: block;
 	width: 100%;
-	height: auto;
+	height: 200px;
 }
 
 .rmg-enrollment-tooltip {

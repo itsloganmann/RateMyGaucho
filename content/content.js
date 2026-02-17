@@ -2716,7 +2716,9 @@ function createEnrollmentLineGraph(enrollmentData) {
 	
 	// Prepare data points
 	const points = enrollmentData.map((entry, i) => {
-		const x = padding.left + (i / (enrollmentData.length - 1)) * graphWidth;
+		const x = enrollmentData.length > 1 
+			? padding.left + (i / (enrollmentData.length - 1)) * graphWidth
+			: padding.left + graphWidth / 2;
 		const percent = entry.percentFull || 0;
 		const y = padding.top + graphHeight * (1 - (percent / maxPercent));
 		return { x, y, percent, entry };
