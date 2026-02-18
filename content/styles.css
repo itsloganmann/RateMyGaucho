@@ -157,12 +157,15 @@
 /* Course information styling */
 .rmg-course-info {
 	margin-top: 0;
-	padding: 4px;
+	margin-left: -10px;
+	margin-right: -10px;
+	padding: 6px 10px;
 	background: #f8f9fa;
-	border-radius: 6px;
+	border-radius: 0 0 10px 10px;
 	border: 1px solid rgba(0,0,0,0.08);
-	width: 100%;
-	margin-left: 0;
+	border-left: none;
+	border-right: none;
+	width: calc(100% + 20px);
 	box-sizing: border-box;
 }
 
