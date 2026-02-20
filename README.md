@@ -1,6 +1,6 @@
 # RateMyGaucho (Chrome Extension)
 
-RateMyGaucho enhances UCSB GOLD by showing professor ratings and course data directly on course result pages. It works offline and preserves your privacy by using a local dataset.
+RateMyGaucho enhances UCSB GOLD to 1,200+ students per month by showing professor ratings and course data directly on course result pages. It works offline and preserves your privacy by using a local dataset.
 
 **Demo Video**: https://www.youtube.com/watch?v=fl7-icSAves
 
