@@ -27,9 +27,16 @@
 	min-width: 380px;
 	max-width: 580px;
 	width: max-content;
-	/* Anchor to the left so cards don't overflow right over adjacent columns */
-	float: left;
-	clear: both;
+}
+
+/* Card row inserted below instructor rows — no table borders */
+.rmg-card-row {
+	background: transparent !important;
+	border: none !important;
+}
+.rmg-card-row > td {
+	border: none !important;
+	background: transparent !important;
 }
 
 .rmg-card::before {

@@ -573,9 +573,14 @@ function observeAndRender() {
 			if (node.dataset.rmgInitialized === '1') continue;
 			node.dataset.rmgInitialized = '1';
 
-			// Prevent duplicate cards per table row
+			// Prevent duplicate cards per table row (cards are now in sibling rows)
 			const row = node.closest && node.closest('tr');
-			if (row && row.querySelector('.rmg-card')) continue;
+			if (row) {
+				// Check if this row already has a card, or the next sibling is a card row
+				if (row.querySelector('.rmg-card')) continue;
+				const nextRow = row.nextElementSibling;
+				if (nextRow && nextRow.classList.contains('rmg-card-row')) continue;
+			}
 
 			totalProcessed++;
 			
@@ -599,8 +604,9 @@ function observeAndRender() {
 
 			// De-duplicate: also check if the DOM already has a card for this course
 			if (row) {
-				const existingCards = row.querySelectorAll('.rmg-card-wrapper');
-				if (existingCards.length > 0) continue;
+				if (row.querySelectorAll('.rmg-card-wrapper').length > 0) continue;
+				const nextSib = row.nextElementSibling;
+				if (nextSib && nextSib.classList.contains('rmg-card-row')) continue;
 			}
 			
 			// Determine gated course data (verify instructor matches course)
@@ -995,13 +1001,27 @@ function renderCard(anchorNode, record, courseData = null) {
 	wrapper.appendChild(card);
 
 	try {
-		const cell = anchorNode.closest && anchorNode.closest('td,th');
-		if (cell) {
-			cell.style.overflow = 'visible';
-			cell.style.position = 'relative';
-			cell.appendChild(wrapper);
+		const row = anchorNode.closest && anchorNode.closest('tr');
+		if (row && row.parentElement) {
+			// Insert as a new row below the instructor row so it doesn't overlap adjacent cells
+			const newRow = document.createElement('tr');
+			newRow.className = 'rmg-card-row';
+			const colCount = row.querySelectorAll('td, th').length || 1;
+			const newCell = document.createElement('td');
+			newCell.colSpan = colCount;
+			newCell.style.cssText = 'padding: 0 4px 4px 4px; border: none; background: transparent;';
+			newCell.appendChild(wrapper);
+			newRow.appendChild(newCell);
+			row.insertAdjacentElement('afterend', newRow);
 		} else {
-			anchorNode.insertAdjacentElement('afterend', wrapper);
+			const cell = anchorNode.closest && anchorNode.closest('td,th');
+			if (cell) {
+				cell.style.overflow = 'visible';
+				cell.style.position = 'relative';
+				cell.appendChild(wrapper);
+			} else {
+				anchorNode.insertAdjacentElement('afterend', wrapper);
+			}
 		}
 	} catch (_e) {
 		(anchorNode.parentElement || document.body).appendChild(wrapper);
@@ -1382,8 +1402,9 @@ function parseNaturalQuery(queryText) {
 	// Department aliases (lowercase typed words -> canonical dept code(s))
 	// Some aliases map to multiple departments using arrays
 	const deptAliases = {
-		'cs': 'CMPSC', 'compsci': 'CMPSC', 'computer science': 'CMPSC', 'compeng': 'ECE',
-		'ee': 'ECE', 'me': 'ME', 'ce': 'ECE', 'matsci': 'MATRL',
+		'cs': 'CMPSC', 'cmpsc': 'CMPSC', 'compsci': 'CMPSC', 'computer science': 'CMPSC', 'computer': 'CMPSC',
+		'compeng': 'ECE',
+		'ee': 'ECE', 'ece': 'ECE', 'matsci': 'MATRL',
 		'econ': 'ECON', 'economics': 'ECON',
 		'math': 'MATH', 'mathematics': 'MATH',
 		'bio': ['EEMB', 'MCDB', 'BIOE'], 'biology': ['EEMB', 'MCDB', 'BIOE'],
@@ -1394,27 +1415,33 @@ function parseNaturalQuery(queryText) {
 		'bioe': 'BIOE', 'bioengineering': 'BIOE',
 		'chem': 'CHEM', 'chemistry': 'CHEM',
 		'phys': 'PHYS', 'physics': 'PHYS',
-		'psych': 'PSY', 'psychology': 'PSY', 'stats': 'PSTAT', 'statistics': 'PSTAT', 'pstat': 'PSTAT',
+		'psych': 'PSY', 'psy': 'PSY', 'psychology': 'PSY',
+		'stats': 'PSTAT', 'statistics': 'PSTAT', 'pstat': 'PSTAT',
 		'comm': 'COMM', 'communication': 'COMM',
-		'art': 'ART', 'music': 'MUS', 'hist': 'HIST', 'history': 'HIST',
-		'eng': 'ENGL', 'english': 'ENGL',
+		'art': 'ART', 'music': 'MUS', 'mus': 'MUS',
+		'hist': 'HIST', 'history': 'HIST',
+		'eng': 'ENGL', 'engl': 'ENGL', 'english': 'ENGL',
 		'phil': 'PHIL', 'philosophy': 'PHIL',
 		'soc': 'SOC', 'sociology': 'SOC',
 		'anth': 'ANTH', 'anthropology': 'ANTH',
 		'geog': 'GEOG', 'geography': 'GEOG',
 		'ling': 'LING', 'linguistics': 'LING',
 		'span': 'SPAN', 'spanish': 'SPAN',
-		'french': 'FR',
-		'german': 'GER',
+		'french': 'FR', 'fr': 'FR',
+		'german': 'GER', 'ger': 'GER',
 		'japan': 'JAPAN', 'japanese': 'JAPAN',
 		'chin': 'CHIN', 'chinese': 'CHIN',
-		'dance': 'DANCE', 'theatre': 'THTR', 'theater': 'THTR',
-		'writing': 'WRIT',
+		'dance': 'DANCE', 'theatre': 'THTR', 'theater': 'THTR', 'thtr': 'THTR',
+		'writing': 'WRIT', 'writ': 'WRIT',
 		'earth': 'EARTH', 'geology': 'EARTH',
 		'polisci': 'POL S', 'political science': 'POL S', 'poli sci': 'POL S',
 		'environ': 'ENV S', 'environmental': 'ENV S',
-		'feminist': 'FEMST', 'film': 'FILMD',
-		'electrical': 'ECE'
+		'feminist': 'FEMST', 'femst': 'FEMST', 'film': 'FILMD',
+		'electrical': 'ECE',
+		'am': 'AM', 'applied math': 'AM', 'applied mathematics': 'AM',
+		'engr': 'ENGR', 'engineering': 'ENGR',
+		'globl': 'GLOBL', 'global': 'GLOBL',
+		'me': 'ME'
 	};
 
 	// Extract uppercase dept codes from query text — but only if they are known departments
@@ -1465,17 +1492,17 @@ function filterCoursesNLP(query, courseLookup, deptAverages) {
 			let score = 0;
 			let excluded = false;
 
-			// Exact course code — strong match
+			// Exact course code — strongest match (weight: 100)
 			if (hasExactCourse) {
 				const normTarget = normalizeCourseCode(parsed.exactCourseCode);
-				if (normalizeCourseCode(rec.courseName) === normTarget) score += 50;
+				if (normalizeCourseCode(rec.courseName) === normTarget) score += 100;
 				else { excluded = true; }
 			}
 
-			// Department filter — if specified, filter by it
+			// Department filter — high weight (50) so it always dominates difficulty/level
 			if (!excluded && hasDeptFilter) {
 				const dept = (rec.courseName || '').split(/\s+/)[0];
-				if (parsed.departments.includes(dept)) score += 10;
+				if (parsed.departments.includes(dept)) score += 50;
 				else if (!hasExactCourse) { excluded = true; }
 			}
 
@@ -1509,22 +1536,22 @@ function filterCoursesNLP(query, courseLookup, deptAverages) {
 				}
 			}
 
-			// Difficulty
+			// Difficulty — secondary modifier (weight: 5), never overrides dept/course
 			const gpa = parseFloat(rec.avgGpa);
 			if (hasDifficulty && !isNaN(gpa)) {
-				if (parsed.difficulty === 'easy' && gpa >= 3.5) score += 8;
-				else if (parsed.difficulty === 'hard' && gpa <= 2.8) score += 8;
-				else if (parsed.difficulty === 'moderate' && gpa > 2.8 && gpa < 3.5) score += 8;
-				else score -= 3;
+				if (parsed.difficulty === 'easy' && gpa >= 3.5) score += 5;
+				else if (parsed.difficulty === 'hard' && gpa <= 2.8) score += 5;
+				else if (parsed.difficulty === 'moderate' && gpa > 2.8 && gpa < 3.5) score += 5;
+				else score -= 2;
 			}
 
-			// Course level
+			// Course level — secondary modifier (weight: 3)
 			const numMatch = (rec.courseName || '').match(/\d+/);
 			const courseNum = numMatch ? parseInt(numMatch[0], 10) : 0;
 			if (hasLevel) {
-				if (parsed.level === 'upper' && courseNum >= 100) score += 5;
-				else if (parsed.level === 'lower' && courseNum < 100) score += 5;
-				else if (courseNum > 0) score -= 2;
+				if (parsed.level === 'upper' && courseNum >= 100) score += 3;
+				else if (parsed.level === 'lower' && courseNum < 100) score += 3;
+				else if (courseNum > 0) score -= 1;
 			}
 
 			if (score > 0) {
