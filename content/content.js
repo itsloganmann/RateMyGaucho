@@ -2475,13 +2475,9 @@ function observeAndRender() {
 			matchedCount++;
 			console.log('[RateMyGaucho] MATCHED:', info.raw, '->', match.firstName, match.lastName, match.rmpScore);
 			
-			if (!normalizedCourse || !Array.isArray(courseList) || courseList.length === 0) {
-				console.log('[RateMyGaucho] Skipping card - course not present in dataset:', normalizedCourse);
-				continue;
-			}
-			
-			if (!courseData) {
-				console.log('[RateMyGaucho] Skipping card - no course data selected for instructor:', normalizedCourse);
+			if (!normalizedCourse || !Array.isArray(courseList) || courseList.length === 0 || !courseData) {
+				console.log('[RateMyGaucho] No course data - rendering basic RMP card for:', match.firstName, match.lastName);
+				renderCard(node, match, null, null, null);
 				continue;
 			}
 			
@@ -2490,31 +2486,8 @@ function observeAndRender() {
 				`${match.firstName} ${match.lastName}`, '->', courseData.courseName,
 				'filteredReviews:', Array.isArray(courseData.recentReviews) ? courseData.recentReviews.length : 0, filterStatus);
 			
-			// Gate course data: show when reviews mention instructor OR CSV verification confirms match
-			const verifiedByCsvProfessor = csvProfessorMatches(courseData, match);
-			const verifiedByFlag = typeof courseData?.reviewVerification === 'string'
-				&& courseData.reviewVerification.toUpperCase().includes('MATCH');
-			
-			const hasInstructorSpecificReviews = (
-				courseData && courseData._reviewsFiltered
-				&& Array.isArray(courseData.recentReviews)
-				&& courseData.recentReviews.length > 0
-			);
-			
-			const gatedCourseData = (courseData && (hasInstructorSpecificReviews || verifiedByCsvProfessor || verifiedByFlag))
-				? courseData
-				: null;
-			
-			if (!gatedCourseData) {
-				console.log('[RateMyGaucho] SKIPPED course data for',
-					`${match.firstName} ${match.lastName}`,
-					'- gating conditions not met',
-					{ hasInstructorSpecificReviews, verifiedByCsvProfessor, reviewVerification: courseData?.reviewVerification });
-				continue;
-			}
-			
 			courseFoundCount++;
-			renderCard(node, match, gatedCourseData, departmentAverages, prerequisiteMap);
+			renderCard(node, match, courseData, departmentAverages, prerequisiteMap);
 		}
 		
 		console.log(`[RateMyGaucho] Summary: ${matchedCount}/${totalProcessed} instructors matched, ${courseFoundCount}/${matchedCount} with course data`);
@@ -3239,14 +3212,12 @@ function renderCard(anchorNode, record, courseData = null, departmentAverages = 
 	try {
 		const cell = anchorNode.closest && anchorNode.closest('td,th');
 		if (cell) {
-			cell.style.minWidth = '960px';
 			cell.style.width = 'auto';
 			cell.style.maxWidth = 'none';
 			cell.style.paddingRight = '12px';
 			cell.style.paddingLeft = '12px';
 			cell.style.textAlign = 'left';
 			cell.style.verticalAlign = 'top';
-			cell.style.display = 'block';
 			cell.appendChild(card);
 		} else {
 			anchorNode.insertAdjacentElement('afterend', card);
