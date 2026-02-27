@@ -1132,17 +1132,59 @@ function renderNLPSearchBar() {
 			
 			item.addEventListener('click', () => {
 				// Try to find and scroll to this course in the page
-				const courseElements = Array.from(document.querySelectorAll('*')).filter(el => {
-					const text = (el.textContent || '').trim();
-					return text.includes(result.course.courseName);
-				});
+				const courseName = result.course.courseName;
+				const profName = result.course.csvProfessor || '';
+				let targetElement = null;
 				
-				if (courseElements.length > 0) {
-					courseElements[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-					courseElements[0].style.backgroundColor = 'rgba(0, 54, 96, 0.1)';
+				// Strategy 1: Find the RMG card that shows this course name
+				const rmgCards = document.querySelectorAll('.rmg-course-name');
+				for (const el of rmgCards) {
+					if ((el.textContent || '').trim() === courseName) {
+						// Scroll to the whole card
+						targetElement = el.closest('.rmg-card') || el;
+						break;
+					}
+				}
+				
+				// Strategy 2: Find table cells/rows containing the exact course name text
+				if (!targetElement) {
+					const candidates = document.querySelectorAll('td, th, span.courseTitle, span.courseTitleText, a');
+					for (const el of candidates) {
+						// Skip elements inside the NLP search bar
+						if (el.closest('.rmg-nlp-search')) continue;
+						const text = (el.textContent || '').trim().replace(/\s+/g, ' ');
+						// Match course code like "MATH 3B" in cell text
+						if (text.includes(courseName) && el.children.length < 10) {
+							targetElement = el.closest('tr') || el;
+							break;
+						}
+					}
+				}
+				
+				// Strategy 3: Search for instructor name in table cells (professor column)
+				if (!targetElement && profName) {
+					const allCells = document.querySelectorAll('td, th');
+					for (const cell of allCells) {
+						if (cell.closest('.rmg-nlp-search') || cell.closest('.rmg-card')) continue;
+						const text = (cell.textContent || '').trim();
+						// Check if cell contains the professor's last name
+						const profParts = profName.split(/[,\s]+/).filter(Boolean);
+						const lastName = profParts[profParts.length - 1] || profParts[0] || '';
+						if (lastName && text.toLowerCase().includes(lastName.toLowerCase())) {
+							targetElement = cell.closest('tr') || cell;
+							break;
+						}
+					}
+				}
+				
+				if (targetElement) {
+					targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+					const origBg = targetElement.style.backgroundColor;
+					targetElement.style.backgroundColor = 'rgba(0, 54, 96, 0.15)';
+					targetElement.style.transition = 'background-color 0.3s ease';
 					setTimeout(() => {
-						courseElements[0].style.backgroundColor = '';
-					}, 2000);
+						targetElement.style.backgroundColor = origBg || '';
+					}, 2500);
 				}
 				
 				resultsPanel.style.display = 'none';
@@ -2728,8 +2770,8 @@ function createEnrollmentLineGraph(enrollmentData) {
 	// Create canvas for the graph
 	const canvas = document.createElement('canvas');
 	canvas.className = 'rmg-enrollment-canvas';
-	const canvasHeight = 100;
-	const canvasWidth = 600;
+	const canvasHeight = 80;
+	const canvasWidth = 500;
 	canvas.width = canvasWidth;
 	canvas.height = canvasHeight;
 	container.appendChild(canvas);
@@ -2737,7 +2779,7 @@ function createEnrollmentLineGraph(enrollmentData) {
 	const ctx = canvas.getContext('2d');
 	
 	// Graph dimensions
-	const padding = { top: 20, right: 20, bottom: 40, left: 45 };
+	const padding = { top: 15, right: 15, bottom: 35, left: 40 };
 	const graphWidth = canvasWidth - padding.left - padding.right;
 	const graphHeight = canvasHeight - padding.top - padding.bottom;
 	
@@ -2761,9 +2803,9 @@ function createEnrollmentLineGraph(enrollmentData) {
 	
 	// Draw 100% label
 	ctx.fillStyle = '#94a3b8';
-	ctx.font = '10px system-ui, -apple-system, sans-serif';
+	ctx.font = '9px system-ui, -apple-system, sans-serif';
 	ctx.textAlign = 'right';
-	ctx.fillText('100%', padding.left - 5, y100 + 4);
+	ctx.fillText('100%', padding.left - 4, y100 + 3);
 	
 	// Prepare data points
 	const points = enrollmentData.map((entry, i) => {
@@ -2815,7 +2857,7 @@ function createEnrollmentLineGraph(enrollmentData) {
 		
 		ctx.fillStyle = color;
 		ctx.beginPath();
-		ctx.arc(point.x, point.y, 4, 0, 2 * Math.PI);
+		ctx.arc(point.x, point.y, 3, 0, 2 * Math.PI);
 		ctx.fill();
 		
 		// White border for data points
@@ -2826,20 +2868,20 @@ function createEnrollmentLineGraph(enrollmentData) {
 	
 	// Draw x-axis labels (phase labels)
 	ctx.fillStyle = '#475569';
-	ctx.font = '11px system-ui, -apple-system, sans-serif';
+	ctx.font = '9px system-ui, -apple-system, sans-serif';
 	ctx.textAlign = 'center';
 	
 	points.forEach(point => {
 		const label = point.entry.phaseLabel || point.entry.phaseKey || '';
-		ctx.fillText(label, point.x, canvasHeight - 10);
+		ctx.fillText(label, point.x, canvasHeight - 4);
 		
 		// Draw date below phase label
 		if (point.entry.displayDate) {
 			ctx.fillStyle = '#94a3b8';
-			ctx.font = '9px system-ui, -apple-system, sans-serif';
-			ctx.fillText(point.entry.displayDate, point.x, canvasHeight - 20);
+			ctx.font = '8px system-ui, -apple-system, sans-serif';
+			ctx.fillText(point.entry.displayDate, point.x, canvasHeight - 15);
 			ctx.fillStyle = '#475569';
-			ctx.font = '11px system-ui, -apple-system, sans-serif';
+			ctx.font = '9px system-ui, -apple-system, sans-serif';
 		}
 	});
 	
@@ -2975,25 +3017,41 @@ function renderCard(anchorNode, record, courseData = null, departmentAverages = 
 		courseInfo = document.createElement('div');
 		courseInfo.className = 'rmg-course-info';
 
-		const courseName = document.createElement('div');
+		// --- Top row: course name + professor inline ---
+		const courseHeader = document.createElement('div');
+		courseHeader.className = 'rmg-course-info-header';
+
+		const courseName = document.createElement('span');
 		courseName.className = 'rmg-course-name';
 		courseName.textContent = courseData.courseName;
-		courseInfo.appendChild(courseName);
-
-		if (courseData.gradingBasis) {
-			const gradingBasis = document.createElement('div');
-			gradingBasis.className = 'rmg-course-detail';
-			gradingBasis.textContent = `Grading: ${courseData.gradingBasis}`;
-			courseInfo.appendChild(gradingBasis);
-		}
+		courseHeader.appendChild(courseName);
 
 		if (courseData.csvProfessor) {
-			const prof = document.createElement('div');
-			prof.className = 'rmg-course-detail';
+			const prof = document.createElement('span');
+			prof.className = 'rmg-course-detail rmg-course-detail--inline';
 			prof.textContent = `Professor: ${courseData.csvProfessor}`;
-			courseInfo.appendChild(prof);
+			courseHeader.appendChild(prof);
 		}
 
+		if (courseData.gradingBasis) {
+			const gradingBasis = document.createElement('span');
+			gradingBasis.className = 'rmg-course-detail rmg-course-detail--inline';
+			gradingBasis.textContent = `Grading: ${courseData.gradingBasis}`;
+			courseHeader.appendChild(gradingBasis);
+		}
+
+		courseInfo.appendChild(courseHeader);
+
+		// --- Two-column body: left = grades + prereqs, right = enrollment + waitlist ---
+		const columnsWrap = document.createElement('div');
+		columnsWrap.className = 'rmg-course-columns';
+
+		const leftCol = document.createElement('div');
+		leftCol.className = 'rmg-course-col rmg-course-col--left';
+		const rightCol = document.createElement('div');
+		rightCol.className = 'rmg-course-col rmg-course-col--right';
+
+		// -- LEFT: Grade distribution --
 		const gradeDistribution = Array.isArray(courseData.gradeDistribution)
 			? courseData.gradeDistribution.filter(entry => entry && Number.isFinite(entry.percent))
 			: [];
@@ -3077,9 +3135,34 @@ function renderCard(anchorNode, record, courseData = null, departmentAverages = 
 				gradeSection.appendChild(gradeSummary);
 			}
 
-			courseInfo.appendChild(gradeSection);
+			leftCol.appendChild(gradeSection);
 		}
 
+		// -- LEFT: Prerequisites --
+		if (prerequisiteMap) {
+			const normalizedCourse = normalizeCourseCode(courseData.courseName);
+			const prereqChain = buildPrereqChain(normalizedCourse, prerequisiteMap);
+			
+			if (prereqChain.prereqs && prereqChain.prereqs.length > 0) {
+				const prereqSection = document.createElement('div');
+				prereqSection.className = 'rmg-course-section';
+				
+				const prereqTitle = document.createElement('div');
+				prereqTitle.className = 'rmg-course-detail rmg-course-detail--title';
+				prereqTitle.textContent = 'Prerequisites';
+				prereqSection.appendChild(prereqTitle);
+				
+				const chainDisplay = document.createElement('div');
+				chainDisplay.className = 'rmg-prereq-chain';
+				const chainText = renderPrereqChain(prereqChain);
+				chainDisplay.textContent = chainText;
+				prereqSection.appendChild(chainDisplay);
+				
+				leftCol.appendChild(prereqSection);
+			}
+		}
+
+		// -- RIGHT: Enrollment graph + waitlist --
 		const enrollmentEntries = Array.isArray(courseData.enrollmentEntries) ? courseData.enrollmentEntries : [];
 		const enrollmentForChart = enrollmentEntries.slice(-8);
 		const capacities = enrollmentForChart
@@ -3127,33 +3210,17 @@ function renderCard(anchorNode, record, courseData = null, departmentAverages = 
 				enrollmentSection.appendChild(oddsWrap);
 			}
 			
-			courseInfo.appendChild(enrollmentSection);
+			rightCol.appendChild(enrollmentSection);
 		}
 
-		// Feature 3: Add prerequisite section
-		if (prerequisiteMap) {
-			const normalizedCourse = normalizeCourseCode(courseData.courseName);
-			const prereqChain = buildPrereqChain(normalizedCourse, prerequisiteMap);
-			
-			if (prereqChain.prereqs && prereqChain.prereqs.length > 0) {
-				const prereqSection = document.createElement('div');
-				prereqSection.className = 'rmg-course-section';
-				
-				const prereqTitle = document.createElement('div');
-				prereqTitle.className = 'rmg-course-detail rmg-course-detail--title';
-				prereqTitle.textContent = 'Prerequisites';
-				prereqSection.appendChild(prereqTitle);
-				
-				const chainDisplay = document.createElement('div');
-				chainDisplay.className = 'rmg-prereq-chain';
-				const chainText = renderPrereqChain(prereqChain);
-				chainDisplay.textContent = chainText;
-				prereqSection.appendChild(chainDisplay);
-				
-				courseInfo.appendChild(prereqSection);
-			}
+		// Only add columns if at least one has content
+		if (leftCol.children.length || rightCol.children.length) {
+			columnsWrap.appendChild(leftCol);
+			columnsWrap.appendChild(rightCol);
+			courseInfo.appendChild(columnsWrap);
 		}
 
+		// --- Bottom row: verification + reviews (full width) ---
 		const hasCounts = Number.isFinite(courseData.foundReviews) || Number.isFinite(courseData.expectedReviews);
 		if (courseData.reviewVerification || hasCounts) {
 			const ver = document.createElement('div');

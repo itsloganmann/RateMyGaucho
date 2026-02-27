@@ -5,7 +5,7 @@
 	position: relative;
 	display: flex;
 	flex-direction: column;
-	padding: 6px 10px 6px 10px;
+	padding: 5px 10px 5px 10px;
 	border-radius: 10px;
 	background: #fff;
 	border: 1px solid rgba(0,0,0,0.06);
@@ -15,7 +15,7 @@
 	width: 100%;
 	max-width: 100%;
 	flex: 0 1 auto;
-	gap: 4px;
+	gap: 2px;
 }
 
 .rmg-card--no-rail {
@@ -56,7 +56,7 @@
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	flex-wrap: wrap;
+	flex-wrap: nowrap;
 	position: relative;
 	max-width: 100%;
 }
@@ -115,14 +115,14 @@
 /* Gaucho Stars */
 .rmg-stars {
 	display: inline-flex;
-	gap: 3px;
+	gap: 2px;
 	align-items: center;
 }
 
 .rmg-star-container {
 	position: relative;
-	width: 24px;
-	height: 24px;
+	width: 18px;
+	height: 18px;
 	display: inline-block;
 }
 
@@ -130,8 +130,8 @@
 	position: absolute;
 	top: 0;
 	left: 0;
-	width: 24px;
-	height: 24px;
+	width: 18px;
+	height: 18px;
 	object-fit: contain;
 	transition: filter 0.2s ease;
 }
@@ -159,7 +159,7 @@
 	margin-top: 0;
 	margin-left: -10px;
 	margin-right: -10px;
-	padding: 6px 10px;
+	padding: 4px 10px;
 	background: #f8f9fa;
 	border-radius: 0 0 10px 10px;
 	border: 1px solid rgba(0,0,0,0.08);
@@ -169,24 +169,61 @@
 	box-sizing: border-box;
 }
 
+/* Header row: course name + professor inline */
+.rmg-course-info-header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 4px 12px;
+	margin-bottom: 2px;
+}
+
+.rmg-course-detail--inline {
+	display: inline;
+	margin-bottom: 0;
+}
+
+/* Two-column layout for grades + enrollment side by side */
+.rmg-course-columns {
+	display: flex;
+	gap: 12px;
+	align-items: flex-start;
+	width: 100%;
+}
+
+.rmg-course-col {
+	flex: 1;
+	min-width: 0;
+}
+
+.rmg-course-col--left {
+	flex: 0 0 45%;
+	max-width: 45%;
+}
+
+.rmg-course-col--right {
+	flex: 1;
+	min-width: 0;
+}
+
 .rmg-course-section {
-	margin-top: 2px;
+	margin-top: 1px;
 	display: flex;
 	flex-direction: column;
-	gap: 2px;
+	gap: 1px;
 }
 
 .rmg-course-name {
 	font-weight: 600;
 	color: #003660;
-	margin-bottom: 1px;
+	margin-bottom: 0;
 	font-size: 12px;
 }
 
 .rmg-course-detail {
 	font-size: 11px;
 	color: #666;
-	margin-bottom: 1px;
+	margin-bottom: 0;
 }
 
 .rmg-course-detail--title {
@@ -207,7 +244,7 @@
 	font-weight: 600;
 	font-size: 11px;
 	color: #003660;
-	margin-bottom: 2px;
+	margin-bottom: 1px;
 }
 
 .rmg-course-review {
@@ -215,7 +252,7 @@
 	color: #555;
 	font-style: italic;
 	margin-bottom: 1px;
-	line-height: 1.2;
+	line-height: 1.15;
 	padding-left: 6px;
 	border-left: 2px solid #ddd;
 	max-width: 100%;
@@ -231,14 +268,14 @@
 .rmg-grade-chart {
 	display: flex;
 	flex-direction: column;
-	gap: 2px;
+	gap: 1px;
 }
 
 .rmg-grade-bar {
 	display: grid;
-	grid-template-columns: 40px 1fr 40px;
+	grid-template-columns: 22px 1fr 34px;
 	align-items: center;
-	gap: 6px;
+	gap: 4px;
 	font-size: 10px;
 	color: #1f2937;
 }
@@ -247,11 +284,12 @@
 	font-weight: 600;
 	text-transform: uppercase;
 	color: #1f2937;
+	font-size: 9px;
 }
 
 .rmg-grade-bar-track {
 	position: relative;
-	height: 6px;
+	height: 5px;
 	border-radius: 999px;
 	background: rgba(37, 99, 235, 0.15);
 	overflow: hidden;
@@ -272,21 +310,22 @@
 	font-variant-numeric: tabular-nums;
 	color: #334155;
 	padding-left: 0;
+	font-size: 9px;
 }
 
 .rmg-enrollment-graph {
 	position: relative;
-	margin: 2px 0;
+	margin: 1px 0;
 	background: #ffffff;
-	border-radius: 8px;
-	padding: 4px;
+	border-radius: 6px;
+	padding: 2px;
 	border: 1px solid rgba(0,0,0,0.08);
 }
 
 .rmg-enrollment-canvas {
 	display: block;
 	width: 100%;
-	height: 100px;
+	height: 80px;
 }
 
 .rmg-enrollment-tooltip {
@@ -314,13 +353,13 @@
 .rmg-card-top-bar {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 6px;
+	gap: 4px;
 	align-items: center;
-	padding: 4px 6px;
+	padding: 2px 6px;
 	background: #f1f5f9;
-	border-radius: 8px;
+	border-radius: 6px;
 	border: 1px solid rgba(15,23,42,0.08);
-	margin-bottom: 2px;
+	margin-bottom: 1px;
 }
 
 .rmg-top-bar-chips {
@@ -468,12 +507,12 @@
 @media (max-width: 720px) {
 	.rmg-card {
 		flex-direction: column;
-		gap: 10px;
+		gap: 6px;
 		min-width: auto;
 		width: 100%;
 		max-width: 100%;
-		padding: 12px;
-		margin: 6px 0 0;
+		padding: 8px;
+		margin: 4px 0 0;
 	}
 	.rmg-card::before {
 		display: none;
@@ -488,19 +527,27 @@
 	.rmg-subtle {
 		white-space: normal;
 	}
+	.rmg-course-columns {
+		flex-direction: column;
+		gap: 4px;
+	}
+	.rmg-course-col--left {
+		flex: 1;
+		max-width: 100%;
+	}
 }
 
 /* Feature 1: Waitlist Odds Styles */
 .rmg-waitlist-odds {
 	display: flex;
 	align-items: center;
-	gap: 6px;
-	margin-top: 2px;
-	padding: 1px 0;
+	gap: 4px;
+	margin-top: 1px;
+	padding: 0;
 }
 
 .rmg-waitlist-odds-label {
-	font-size: 11px;
+	font-size: 10px;
 	font-weight: 600;
 	color: #003660;
 }
@@ -583,11 +630,11 @@
 /* Prerequisite chain display - now shown as a visible section */
 .rmg-prereq-chain {
 	color: #475569;
-	line-height: 1.3;
+	line-height: 1.2;
 	font-family: 'Courier New', monospace;
-	font-size: 11px;
+	font-size: 10px;
 	white-space: pre-wrap;
-	padding: 2px 0;
+	padding: 1px 0;
 }
 
 .rmg-prereq-node {
