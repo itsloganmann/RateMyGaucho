@@ -238,6 +238,33 @@ function parseCourseCsv(csvText) {
 			if (isNaN(avgGpa)) {
 				avgGpa = computeGpaFromGradingTrend(row.grading_trend || '');
 			}
+
+			// Parse grading trend into individual grade entries for pills
+			const gradingTrendRaw = (row.grading_trend || '').trim();
+			let gradingTrend = [];
+			if (gradingTrendRaw) {
+				// Format: "A: 62.6%, B: 27.8%, C: 9.1%, D: 0.0%, F: 0.5%"
+				const gradeMatches = gradingTrendRaw.match(/[A-Za-z+\-]+\s*:\s*[\d.]+%/g);
+				if (gradeMatches) {
+					gradingTrend = gradeMatches.map(g => g.trim());
+				} else {
+					gradingTrend = [gradingTrendRaw]; // fallback: single entry
+				}
+			}
+
+			// Parse enrollment trend: extract current/max numbers from pipe-separated entries
+			const enrollmentRaw = (row.enrollment_trend || '').trim();
+			let enrollmentTrend = [];
+			if (enrollmentRaw) {
+				const entries = enrollmentRaw.split('|').map(e => e.trim()).filter(Boolean);
+				for (const entry of entries) {
+					// Match pattern like "22/210" or "0/360"
+					const m = entry.match(/(\d+)\s*\/\s*(\d+)/);
+					if (m) {
+						enrollmentTrend.push(parseInt(m[1], 10));
+					}
+				}
+			}
 			
 			const rec = {
 				// Existing fields used by the UI and matching
@@ -247,9 +274,9 @@ function parseCourseCsv(csvText) {
 				// Keep compatibility: some CSVs may not have grading_basis
 				gradingBasis: (row.grading_basis || '').trim(),
 				
-				// Flexible parsing to support both legacy JSON arrays and pipe-delimited
-				gradingTrend: parseFlexibleArray(row.grading_trend, { delimiter: '|', type: 'string' }),
-				enrollmentTrend: parseFlexibleArray(row.enrollment_trend, { delimiter: '|', type: 'number' }),
+				// Parsed grading and enrollment data for visual display
+				gradingTrend: gradingTrend,
+				enrollmentTrend: enrollmentTrend,
 				recentReviews,
 				
 				// Professor and metadata
@@ -494,13 +521,19 @@ function makeKey(last, first, dept) {
 }
 
 function observeAndRender() {
-	const observer = new MutationObserver(() => scheduleScan());
+	let scanPending = false;
+	const observer = new MutationObserver(() => {
+		if (!scanPending) {
+			scanPending = true;
+			scheduleScan();
+		}
+	});
 	observer.observe(document, { childList: true, subtree: true });
 	scheduleScan();
 
 	async function scheduleScan() {
-		if (typeof requestAnimationFrame === 'function') requestAnimationFrame(async () => { await scan(); });
-		else setTimeout(async () => { await scan(); }, 50);
+		if (typeof requestAnimationFrame === 'function') requestAnimationFrame(async () => { await scan(); scanPending = false; });
+		else setTimeout(async () => { await scan(); scanPending = false; }, 50);
 	}
 
 	async function scan() {
@@ -517,10 +550,20 @@ function observeAndRender() {
 		let matchedCount = 0;
 		let courseFoundCount = 0;
 		let totalProcessed = 0;
+
+		// De-duplicate: track which table row + course code combos already have a card
+		const renderedRows = new Set();
+		// Track which course+instructor combos already have a card on the page
+		const renderedCourseInstructors = new Set();
 		
 		for (const node of nodes) {
 			if (node.dataset.rmgInitialized === '1') continue;
 			node.dataset.rmgInitialized = '1';
+
+			// Prevent duplicate cards per table row
+			const row = node.closest && node.closest('tr');
+			if (row && row.querySelector('.rmg-card')) continue;
+
 			totalProcessed++;
 			
 			const info = extractInstructorInfo(node);
@@ -540,6 +583,12 @@ function observeAndRender() {
 			if (courseCode) {
 				console.log('[RateMyGaucho] Extracted course code:', courseCode, 'normalized:', normalizeCourseCode(courseCode));
 			}
+
+			// De-duplicate: skip if we already rendered a card for this row+course combo
+			const rowId = row ? (row.id || row.rowIndex || Array.prototype.indexOf.call(row.parentElement?.children || [], row)) : null;
+			const dedupeKey = `${rowId}:${courseCode || 'none'}`;
+			if (renderedRows.has(dedupeKey)) continue;
+			renderedRows.add(dedupeKey);
 			
 			// Determine gated course data (verify instructor matches course)
 			let gatedCourseData = null;
@@ -573,6 +622,12 @@ function observeAndRender() {
 			
 			if (match) {
 				matchedCount++;
+				// Only one card per course + instructor combination on the whole page
+				const instructorKey = `${match.lastName}|${match.firstName}`;
+				const courseInstructorKey = `${courseCode || 'none'}:${instructorKey}`;
+				if (renderedCourseInstructors.has(courseInstructorKey)) continue;
+				renderedCourseInstructors.add(courseInstructorKey);
+
 				console.log('[RateMyGaucho] MATCHED:', info.raw, '->', match.firstName, match.lastName, match.rmpScore);
 				if (gatedCourseData) {
 					const filterStatus = gatedCourseData._reviewsFiltered ? '(filtered)' : '(fallback)';
@@ -582,7 +637,11 @@ function observeAndRender() {
 				}
 				renderCard(node, match, gatedCourseData);
 			} else if (gatedCourseData) {
-				// No RMP ratings but we do have course data — still render a card
+				// Only one course-only card per course code on the page
+				const courseOnlyKey = `courseonly:${courseCode || 'none'}`;
+				if (renderedCourseInstructors.has(courseOnlyKey)) continue;
+				renderedCourseInstructors.add(courseOnlyKey);
+
 				console.log('[RateMyGaucho] No ratings match for:', info.raw, '— rendering course-only card');
 				renderCard(node, null, gatedCourseData);
 			} else {
@@ -847,29 +906,24 @@ function renderCard(anchorNode, record, courseData = null) {
 		const starContainer = document.createElement('div');
 		starContainer.className = 'rmg-star-container';
 		
-		// Create background (empty) star
 		const emptyStar = document.createElement('img');
 		emptyStar.src = chrome.runtime.getURL('gaucho.png');
 		emptyStar.className = 'rmg-star rmg-star--empty';
 		emptyStar.alt = '★';
 		
-		// Create filled star overlay
 		const filledStar = document.createElement('img');
 		filledStar.src = chrome.runtime.getURL('gaucho.png');
 		filledStar.className = 'rmg-star rmg-star--filled';
 		filledStar.alt = '★';
 		
-		// Calculate precise fill percentage for this star based on tenths
 		const starValue = i + 1;
 		let fillPercentage = 0;
-		
 		if (rating >= starValue) {
 			fillPercentage = 100;
 		} else if (rating > starValue - 1) {
 			const partialRating = rating - (starValue - 1);
 			fillPercentage = Math.max(0, Math.min(100, partialRating * 100));
 		}
-		
 		starContainer.style.setProperty('--fill-percentage', `${fillPercentage}%`);
 		
 		starContainer.appendChild(emptyStar);
@@ -877,16 +931,20 @@ function renderCard(anchorNode, record, courseData = null) {
 		stars.appendChild(starContainer);
 	}
 
-	// Meta line for additional info if present
 	const meta = document.createElement('span');
 	meta.className = 'rmg-meta';
 	meta.textContent = '';
 
-	// Inline meter that fills proportionally to rating
 	const meter = document.createElement('div');
 	meter.className = 'rmg-meter';
 	const bar = document.createElement('span');
 	meter.appendChild(bar);
+
+	// Course metadata section (sparklines, grade pills, review)
+	let courseMeta = null;
+	if (courseData) {
+		courseMeta = renderCourseMeta(courseData);
+	}
 
 	const actions = document.createElement('div');
 	actions.className = 'rmg-actions';
@@ -898,116 +956,16 @@ function renderCard(anchorNode, record, courseData = null) {
 	link.href = (record && record.profileUrl) ? record.profileUrl : (courseData && courseData.courseUrl ? courseData.courseUrl : 'https://ucsbplat.com/instructor/');
 	link.textContent = 'UCSB Plat';
 
-	// Course data section
-	let courseInfo = null;
-	if (courseData) {
-		courseInfo = document.createElement('div');
-		courseInfo.className = 'rmg-course-info';
-		
-		// Course name
-		const courseName = document.createElement('div');
-		courseName.className = 'rmg-course-name';
-		courseName.textContent = courseData.courseName;
-		courseInfo.appendChild(courseName);
-		
-		// Grading basis
-		if (courseData.gradingBasis) {
-			const gradingBasis = document.createElement('div');
-			gradingBasis.className = 'rmg-course-detail';
-			gradingBasis.textContent = `Grading: ${courseData.gradingBasis}`;
-			courseInfo.appendChild(gradingBasis);
-		}
-		
-		// Grading trend
-		if (courseData.gradingTrend && courseData.gradingTrend.length > 0) {
-			const gradingTrend = document.createElement('div');
-			gradingTrend.className = 'rmg-course-detail';
-			gradingTrend.textContent = `Grade Trend: ${courseData.gradingTrend.join(', ')}`;
-			courseInfo.appendChild(gradingTrend);
-		}
-		
-		// Enrollment trend
-		if (courseData.enrollmentTrend && courseData.enrollmentTrend.length > 0) {
-			const enrollmentTrend = document.createElement('div');
-			enrollmentTrend.className = 'rmg-course-detail';
-			enrollmentTrend.textContent = `Enrollment: ${courseData.enrollmentTrend.join(' → ')}`;
-			courseInfo.appendChild(enrollmentTrend);
-		}
-		
-		// Platform instructor (from CSV), if provided
-		if (courseData.csvProfessor) {
-			const prof = document.createElement('div');
-			prof.className = 'rmg-course-detail';
-			prof.textContent = `Professor (PLAT): ${courseData.csvProfessor}`;
-			courseInfo.appendChild(prof);
-		}
-		
-		// Review verification and counts (from CSV), if provided
-		const hasCounts = Number.isFinite(courseData.foundReviews) || Number.isFinite(courseData.expectedReviews);
-		if (courseData.reviewVerification || hasCounts) {
-			const ver = document.createElement('div');
-			ver.className = 'rmg-course-detail';
-			
-			const parts = [];
-			if (courseData.reviewVerification) parts.push(`Verification: ${courseData.reviewVerification}`);
-			if (Number.isFinite(courseData.foundReviews) && Number.isFinite(courseData.expectedReviews)) {
-				parts.push(`Reviews: ${courseData.foundReviews}/${courseData.expectedReviews}`);
-			} else if (Number.isFinite(courseData.foundReviews)) {
-				parts.push(`Reviews found: ${courseData.foundReviews}`);
-			} else if (Number.isFinite(courseData.expectedReviews)) {
-				parts.push(`Reviews expected: ${courseData.expectedReviews}`);
-			}
-			
-			ver.textContent = parts.join(' • ');
-			courseInfo.appendChild(ver);
-		}
-		
-		// Recent reviews
-		if (courseData.recentReviews && courseData.recentReviews.length > 0) {
-			const reviewsContainer = document.createElement('div');
-			reviewsContainer.className = 'rmg-course-reviews';
-			
-			const reviewsTitle = document.createElement('div');
-			reviewsTitle.className = 'rmg-course-reviews-title';
-			reviewsTitle.textContent = 'Recent Reviews:';
-			reviewsContainer.appendChild(reviewsTitle);
-			
-			// Show up to 2 most recent reviews, truncated
-			const reviewsToShow = courseData.recentReviews.slice(0, 2);
-			for (const review of reviewsToShow) {
-				const reviewElement = document.createElement('div');
-				reviewElement.className = 'rmg-course-review';
-				const truncatedReview = review.length > 150 ? review.substring(0, 150) + '...' : review;
-				reviewElement.textContent = `"${truncatedReview}"`;
-				reviewsContainer.appendChild(reviewElement);
-			}
-			
-			courseInfo.appendChild(reviewsContainer);
-		}
-		
-		// Course URL link
-		if (courseData.courseUrl) {
-			const courseLink = document.createElement('a');
-			courseLink.className = 'rmg-link rmg-course-link';
-			courseLink.target = '_blank';
-			courseLink.rel = 'noopener noreferrer';
-			courseLink.href = courseData.courseUrl;
-			courseLink.textContent = 'Course Info';
-			actions.appendChild(courseLink);
-		}
-	}
-
 	card.appendChild(badge);
 	card.appendChild(stars);
 	card.appendChild(sub);
-	if (courseInfo) {
-		card.appendChild(courseInfo);
+	if (courseMeta) {
+		card.appendChild(courseMeta);
 	}
 	card.appendChild(meter);
 	actions.appendChild(link);
 	card.appendChild(actions);
 
-	// Prefer inserting inside the same table cell to avoid invalid DOM under <tr>
 	// Wrap in a container that enforces min-width even inside narrow <td>
 	const wrapper = document.createElement('div');
 	wrapper.className = 'rmg-card-wrapper';
@@ -1016,7 +974,6 @@ function renderCard(anchorNode, record, courseData = null) {
 	try {
 		const cell = anchorNode.closest && anchorNode.closest('td,th');
 		if (cell) {
-			// Let the cell overflow so the card is not squished
 			cell.style.overflow = 'visible';
 			cell.style.position = 'relative';
 			cell.appendChild(wrapper);
@@ -1024,15 +981,174 @@ function renderCard(anchorNode, record, courseData = null) {
 			anchorNode.insertAdjacentElement('afterend', wrapper);
 		}
 	} catch (_e) {
-		// Last-resort fallback: append near the anchor's parent
 		(anchorNode.parentElement || document.body).appendChild(wrapper);
 	}
 
-	// Animate meter fill after insertion
 	requestAnimationFrame(() => {
 		const pct = Math.max(0, Math.min(100, (rating / 5) * 100));
 		bar.style.width = pct + '%';
 	});
+}
+
+/**
+ * Render course metadata: enrollment sparkline, grade pills, review quote.
+ */
+function renderCourseMeta(courseRec) {
+	if (!courseRec) return null;
+
+	const courseMeta = document.createElement('div');
+	courseMeta.className = 'rmg-course';
+
+	// Header with course name and grading basis
+	const header = document.createElement('div');
+	header.className = 'rmg-course-header';
+
+	if (courseRec.courseName) {
+		const courseTitle = document.createElement('div');
+		courseTitle.className = 'rmg-course-title';
+		courseTitle.textContent = courseRec.courseName;
+		header.appendChild(courseTitle);
+	}
+
+	if (courseRec.gradingBasis) {
+		const chip = document.createElement('span');
+		chip.className = 'rmg-chip';
+		chip.textContent = courseRec.gradingBasis;
+		header.appendChild(chip);
+	}
+
+	courseMeta.appendChild(header);
+
+	// Stats row with enrollment sparkline and grade pills
+	const statsRow = document.createElement('div');
+	statsRow.className = 'rmg-course-stats';
+
+	// Enrollment trend with sparkline
+	if (courseRec.enrollmentTrend && courseRec.enrollmentTrend.length > 0) {
+		const enrollSection = document.createElement('div');
+		enrollSection.className = 'rmg-stat-section';
+
+		const enrollLabel = document.createElement('div');
+		enrollLabel.className = 'rmg-stat-label';
+		enrollLabel.textContent = 'Enrollment';
+		enrollSection.appendChild(enrollLabel);
+
+		const currentEnrollment = courseRec.enrollmentTrend[courseRec.enrollmentTrend.length - 1];
+		if (typeof currentEnrollment === 'number') {
+			const enrollNumber = document.createElement('div');
+			enrollNumber.className = 'rmg-stat-number';
+			enrollNumber.textContent = currentEnrollment.toString();
+			enrollSection.appendChild(enrollNumber);
+		}
+
+		// Sparkline bar chart
+		const enrollSpark = document.createElement('div');
+		enrollSpark.className = 'rmg-sparkline';
+		enrollSpark.setAttribute('aria-label', `Enrollment trend: ${courseRec.enrollmentTrend.join(' → ')}`);
+
+		const maxVal = Math.max(...courseRec.enrollmentTrend.filter(v => typeof v === 'number' && !isNaN(v)));
+		if (maxVal > 0) {
+			courseRec.enrollmentTrend.forEach((val, i) => {
+				if (typeof val === 'number' && !isNaN(val)) {
+					const sparkBar = document.createElement('span');
+					sparkBar.className = 'rmg-spark-bar';
+					sparkBar.style.height = `${Math.max(3, (val / maxVal) * 24)}px`;
+					sparkBar.title = `Quarter ${i + 1}: ${val} students`;
+					enrollSpark.appendChild(sparkBar);
+				}
+			});
+			enrollSection.appendChild(enrollSpark);
+		}
+
+		statsRow.appendChild(enrollSection);
+	}
+
+	// Grade distribution pills
+	if (courseRec.gradingTrend && courseRec.gradingTrend.length > 0) {
+		const gradeSection = document.createElement('div');
+		gradeSection.className = 'rmg-stat-section';
+
+		const gradeLabel = document.createElement('div');
+		gradeLabel.className = 'rmg-stat-label';
+		gradeLabel.textContent = 'Recent Grades';
+		gradeSection.appendChild(gradeLabel);
+
+		const gradeDisplay = document.createElement('div');
+		gradeDisplay.className = 'rmg-grade-pills';
+
+		// Show all grade entries as pills
+		courseRec.gradingTrend.forEach((grade, i) => {
+			if (typeof grade === 'string' && grade.trim()) {
+				const gradePill = document.createElement('span');
+				gradePill.className = `rmg-grade-pill rmg-grade-${getGradeClass(grade)}`;
+				gradePill.textContent = grade.trim();
+				gradePill.title = grade.trim();
+				gradeDisplay.appendChild(gradePill);
+			}
+		});
+
+		gradeSection.appendChild(gradeDisplay);
+		statsRow.appendChild(gradeSection);
+	}
+
+	if (statsRow.children.length > 0) {
+		courseMeta.appendChild(statsRow);
+	}
+
+	// Professor (PLAT)
+	if (courseRec.csvProfessor) {
+		const profLine = document.createElement('div');
+		profLine.style.cssText = 'font-size:10px;color:rgba(0,54,96,0.7);margin-top:4px;';
+		profLine.textContent = `Professor (PLAT): ${courseRec.csvProfessor}`;
+		courseMeta.appendChild(profLine);
+	}
+
+	// Recent student review
+	if (courseRec.recentReviews && courseRec.recentReviews.length > 0) {
+		const firstReview = courseRec.recentReviews[0];
+		if (typeof firstReview === 'string' && firstReview.trim()) {
+			const reviewSection = document.createElement('div');
+			reviewSection.className = 'rmg-review-section';
+
+			const reviewIcon = document.createElement('span');
+			reviewIcon.className = 'rmg-review-icon';
+			reviewIcon.textContent = '💬';
+			reviewSection.appendChild(reviewIcon);
+
+			const reviewText = document.createElement('div');
+			reviewText.className = 'rmg-review-text';
+			const cleanReview = firstReview.replace(/[="]/g, '').trim();
+			const truncatedReview = cleanReview.length > 140
+				? cleanReview.slice(0, 140) + '…' : cleanReview;
+			reviewText.textContent = `"${truncatedReview}"`;
+			reviewSection.appendChild(reviewText);
+
+			const reviewMeta = document.createElement('div');
+			reviewMeta.className = 'rmg-review-meta';
+			reviewMeta.textContent = 'Recent student feedback';
+			reviewSection.appendChild(reviewMeta);
+
+			courseMeta.appendChild(reviewSection);
+		}
+	}
+
+	return courseMeta.children.length > 0 ? courseMeta : null;
+}
+
+// Helper function to determine grade class for styling
+function getGradeClass(grade) {
+	const g = (grade || '').trim().toUpperCase();
+	// Handle formats like "A: 62.6%" or "A+" or "Pass: 100%"
+	const letter = g.match(/^([A-F][+-]?|PASS|FAIL)/);
+	if (!letter) return 'other';
+	const l = letter[1];
+	if (l.startsWith('A')) return 'excellent';
+	if (l.startsWith('B')) return 'good';
+	if (l.startsWith('C')) return 'average';
+	if (l.startsWith('D')) return 'below';
+	if (l.startsWith('F') || l === 'FAIL') return 'failing';
+	if (l === 'PASS') return 'good';
+	return 'other';
 }
 
 function extractCourseCode(instructorNode) {
