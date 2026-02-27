@@ -520,10 +520,15 @@ function makeKey(last, first, dept) {
 	return `${ln}|${fi}|${dp}`;
 }
 
+// Module-level dedup sets — persist across scan() calls so MutationObserver re-entries don't duplicate
+const __rmg_renderedCourseInstructors = new Set();
+const __rmg_renderedCourseOnly = new Set();
+
 function observeAndRender() {
 	let scanPending = false;
+	let scanRunning = false;
 	const observer = new MutationObserver(() => {
-		if (!scanPending) {
+		if (!scanPending && !scanRunning) {
 			scanPending = true;
 			scheduleScan();
 		}
@@ -537,6 +542,19 @@ function observeAndRender() {
 	}
 
 	async function scan() {
+		if (scanRunning) return;
+		scanRunning = true;
+		// Disconnect observer while we mutate the DOM to avoid cascading re-scans
+		observer.disconnect();
+		try {
+			await doScan();
+		} finally {
+			scanRunning = false;
+			observer.observe(document, { childList: true, subtree: true });
+		}
+	}
+
+	async function doScan() {
 		const nodes = findInstructorNodes();
 		console.log('[RateMyGaucho] instructor candidates:', nodes.length);
 		if (!nodes.length) return;
@@ -550,11 +568,6 @@ function observeAndRender() {
 		let matchedCount = 0;
 		let courseFoundCount = 0;
 		let totalProcessed = 0;
-
-		// De-duplicate: track which table row + course code combos already have a card
-		const renderedRows = new Set();
-		// Track which course+instructor combos already have a card on the page
-		const renderedCourseInstructors = new Set();
 		
 		for (const node of nodes) {
 			if (node.dataset.rmgInitialized === '1') continue;
@@ -584,11 +597,11 @@ function observeAndRender() {
 				console.log('[RateMyGaucho] Extracted course code:', courseCode, 'normalized:', normalizeCourseCode(courseCode));
 			}
 
-			// De-duplicate: skip if we already rendered a card for this row+course combo
-			const rowId = row ? (row.id || row.rowIndex || Array.prototype.indexOf.call(row.parentElement?.children || [], row)) : null;
-			const dedupeKey = `${rowId}:${courseCode || 'none'}`;
-			if (renderedRows.has(dedupeKey)) continue;
-			renderedRows.add(dedupeKey);
+			// De-duplicate: also check if the DOM already has a card for this course
+			if (row) {
+				const existingCards = row.querySelectorAll('.rmg-card-wrapper');
+				if (existingCards.length > 0) continue;
+			}
 			
 			// Determine gated course data (verify instructor matches course)
 			let gatedCourseData = null;
@@ -625,8 +638,8 @@ function observeAndRender() {
 				// Only one card per course + instructor combination on the whole page
 				const instructorKey = `${match.lastName}|${match.firstName}`;
 				const courseInstructorKey = `${courseCode || 'none'}:${instructorKey}`;
-				if (renderedCourseInstructors.has(courseInstructorKey)) continue;
-				renderedCourseInstructors.add(courseInstructorKey);
+				if (__rmg_renderedCourseInstructors.has(courseInstructorKey)) continue;
+				__rmg_renderedCourseInstructors.add(courseInstructorKey);
 
 				console.log('[RateMyGaucho] MATCHED:', info.raw, '->', match.firstName, match.lastName, match.rmpScore);
 				if (gatedCourseData) {
@@ -639,8 +652,8 @@ function observeAndRender() {
 			} else if (gatedCourseData) {
 				// Only one course-only card per course code on the page
 				const courseOnlyKey = `courseonly:${courseCode || 'none'}`;
-				if (renderedCourseInstructors.has(courseOnlyKey)) continue;
-				renderedCourseInstructors.add(courseOnlyKey);
+				if (__rmg_renderedCourseOnly.has(courseOnlyKey)) continue;
+				__rmg_renderedCourseOnly.add(courseOnlyKey);
 
 				console.log('[RateMyGaucho] No ratings match for:', info.raw, '— rendering course-only card');
 				renderCard(node, null, gatedCourseData);
@@ -666,8 +679,18 @@ function findInstructorNodes() {
 			}
 			if (idx >= 0) {
 				for (const row of table.querySelectorAll('tbody tr, tr')) {
-					const cells = row.querySelectorAll('td,th');
-					if (cells && cells.length > idx) set.add(cells[idx]);
+					const cells = row.querySelectorAll('td');
+					if (cells && cells.length > idx) {
+						const cell = cells[idx];
+						const txt = (cell.textContent || '').trim();
+						// Skip empty cells, single-letter cells (like "W" for day),
+						// and header text like "Instructor"
+						if (!txt || txt.length < 2 || /^(instructor|professor|ta|staff)$/i.test(txt)) continue;
+						// Must look like a name: at least 2 chars and mostly letters
+						if (/^[A-Za-z][A-Za-z\s,.\-']+$/.test(txt) && txt.length >= 3) {
+							set.add(cell);
+						}
+					}
 				}
 			}
 		}
@@ -1356,16 +1379,42 @@ function parseNaturalQuery(queryText) {
 		'RG ST', 'RENST', 'SLAV', 'SOC', 'SPAN', 'SHS', 'TMP', 'THTR', 'WRIT'
 	]);
 
-	// Department aliases (lowercase typed words -> canonical dept code)
+	// Department aliases (lowercase typed words -> canonical dept code(s))
+	// Some aliases map to multiple departments using arrays
 	const deptAliases = {
-		'cs': 'CMPSC', 'compsci': 'CMPSC', 'compeng': 'CMPEN',
-		'ee': 'ECE', 'me': 'ME', 'ce': 'CE', 'matsci': 'MATRL',
-		'econ': 'ECON', 'math': 'MATH', 'bio': 'BIOL', 'chem': 'CHEM',
-		'phys': 'PHYS', 'psych': 'PSY', 'stats': 'PSTAT', 'pstat': 'PSTAT',
-		'comm': 'COMM', 'art': 'ART', 'music': 'MUS', 'hist': 'HIST',
-		'eng': 'ENGL', 'phil': 'PHIL', 'soc': 'SOC', 'anth': 'ANTH',
-		'geog': 'GEOG', 'ling': 'LING', 'span': 'SPAN', 'french': 'FR',
-		'german': 'GER', 'japan': 'JAPAN', 'chin': 'CHIN'
+		'cs': 'CMPSC', 'compsci': 'CMPSC', 'computer science': 'CMPSC', 'compeng': 'ECE',
+		'ee': 'ECE', 'me': 'ME', 'ce': 'ECE', 'matsci': 'MATRL',
+		'econ': 'ECON', 'economics': 'ECON',
+		'math': 'MATH', 'mathematics': 'MATH',
+		'bio': ['EEMB', 'MCDB', 'BIOE'], 'biology': ['EEMB', 'MCDB', 'BIOE'],
+		'biolo': ['EEMB', 'MCDB', 'BIOE'], 'biol': ['EEMB', 'MCDB', 'BIOE'],
+		'biological': ['EEMB', 'MCDB', 'BIOE'],
+		'eemb': 'EEMB', 'ecology': 'EEMB', 'evolution': 'EEMB',
+		'mcdb': 'MCDB', 'molecular': 'MCDB', 'cell': 'MCDB',
+		'bioe': 'BIOE', 'bioengineering': 'BIOE',
+		'chem': 'CHEM', 'chemistry': 'CHEM',
+		'phys': 'PHYS', 'physics': 'PHYS',
+		'psych': 'PSY', 'psychology': 'PSY', 'stats': 'PSTAT', 'statistics': 'PSTAT', 'pstat': 'PSTAT',
+		'comm': 'COMM', 'communication': 'COMM',
+		'art': 'ART', 'music': 'MUS', 'hist': 'HIST', 'history': 'HIST',
+		'eng': 'ENGL', 'english': 'ENGL',
+		'phil': 'PHIL', 'philosophy': 'PHIL',
+		'soc': 'SOC', 'sociology': 'SOC',
+		'anth': 'ANTH', 'anthropology': 'ANTH',
+		'geog': 'GEOG', 'geography': 'GEOG',
+		'ling': 'LING', 'linguistics': 'LING',
+		'span': 'SPAN', 'spanish': 'SPAN',
+		'french': 'FR',
+		'german': 'GER',
+		'japan': 'JAPAN', 'japanese': 'JAPAN',
+		'chin': 'CHIN', 'chinese': 'CHIN',
+		'dance': 'DANCE', 'theatre': 'THTR', 'theater': 'THTR',
+		'writing': 'WRIT',
+		'earth': 'EARTH', 'geology': 'EARTH',
+		'polisci': 'POL S', 'political science': 'POL S', 'poli sci': 'POL S',
+		'environ': 'ENV S', 'environmental': 'ENV S',
+		'feminist': 'FEMST', 'film': 'FILMD',
+		'electrical': 'ECE'
 	};
 
 	// Extract uppercase dept codes from query text — but only if they are known departments
@@ -1378,8 +1427,11 @@ function parseNaturalQuery(queryText) {
 	}
 	// Also check for department aliases in lowercase query
 	for (const [alias, dept] of Object.entries(deptAliases)) {
-		if (new RegExp(`\\b${alias}\\b`).test(query) && !result.departments.includes(dept)) {
-			result.departments.push(dept);
+		if (new RegExp(`\\b${alias}\\b`).test(query)) {
+			const depts = Array.isArray(dept) ? dept : [dept];
+			for (const d of depts) {
+				if (!result.departments.includes(d)) result.departments.push(d);
+			}
 		}
 	}
 
@@ -1394,15 +1446,19 @@ function filterCoursesNLP(query, courseLookup, deptAverages) {
 	if (!courseLookup) return [];
 	const parsed = parseNaturalQuery(query);
 	const results = [];
+	const queryLower = query.toLowerCase().trim();
+	const queryWords = queryLower.split(/\s+/).filter(w => w.length >= 2);
 	
-	// Check if we have any meaningful filters at all
+	// Check if we have any meaningful structured filters
 	const hasDeptFilter = parsed.departments.length > 0;
 	const hasExactCourse = !!parsed.exactCourseCode;
 	const hasDifficulty = !!parsed.difficulty;
 	const hasLevel = !!parsed.level;
-	const hasAnyFilter = hasDeptFilter || hasExactCourse || hasDifficulty || hasLevel;
+	const hasStructuredFilter = hasDeptFilter || hasExactCourse || hasDifficulty || hasLevel;
 	
-	if (!hasAnyFilter) return []; // Nothing meaningful to search for
+	// If no structured filter matched, try keyword/substring matching against course names,
+	// professor names, and department names
+	const doKeywordSearch = !hasStructuredFilter && queryWords.length > 0;
 
 	for (const [courseName, records] of courseLookup.entries()) {
 		for (const rec of records) {
@@ -1426,8 +1482,31 @@ function filterCoursesNLP(query, courseLookup, deptAverages) {
 			if (excluded) continue;
 			
 			// If no dept and no exact code, give a small base score so difficulty/level filters work
-			if (!hasDeptFilter && !hasExactCourse) {
+			if (hasStructuredFilter && !hasDeptFilter && !hasExactCourse) {
 				score += 1;
+			}
+
+			// Keyword/substring search — matches course names and professor names
+			if (doKeywordSearch) {
+				const courseNameLower = (rec.courseName || '').toLowerCase();
+				const profLower = (rec.csvProfessor || '').toLowerCase();
+				const combined = courseNameLower + ' ' + profLower;
+				
+				let keywordScore = 0;
+				for (const word of queryWords) {
+					// Skip common filler words
+					if (/^(the|a|an|in|on|at|for|and|or|with|my|is|are|class|classes|course|courses)$/.test(word)) continue;
+					if (combined.includes(word)) keywordScore += 5;
+					else if (courseNameLower.includes(word)) keywordScore += 5;
+					else if (profLower.includes(word)) keywordScore += 8; // professor match is strong
+				}
+				
+				if (keywordScore > 0) {
+					score += keywordScore;
+				} else {
+					// No keyword matched — skip this record
+					continue;
+				}
 			}
 
 			// Difficulty

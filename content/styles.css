@@ -25,7 +25,11 @@
 	position: relative;
 	z-index: 100;
 	min-width: 380px;
+	max-width: 580px;
 	width: max-content;
+	/* Anchor to the left so cards don't overflow right over adjacent columns */
+	float: left;
+	clear: both;
 }
 
 .rmg-card::before {
