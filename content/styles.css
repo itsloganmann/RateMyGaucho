@@ -1,97 +1,71 @@
 /* Enhanced UCSB-themed card */
-
-
 .rmg-card {
-	position: relative;
-	display: flex;
-	flex-direction: column;
-	padding: 5px 10px 5px 10px;
-	border-radius: 10px;
+	display: grid;
+	grid-template-columns: auto auto 1fr auto;
+	grid-template-areas:
+		"badge stars sub actions";
+	gap: 6px 8px;
+	align-items: center;
+	padding: 4px 12px;
+	border-radius: 8px;
 	background: #fff;
 	border: 1px solid rgba(0,0,0,0.06);
 	box-shadow: 0 2px 6px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-	margin: 4px 0 0 0;
+	margin-top: 4px;
+	position: relative;
+	overflow: visible;
 	box-sizing: border-box;
-	width: 100%;
-	max-width: 100%;
-	flex: 0 1 auto;
-	gap: 2px;
+	min-width: 380px;
+	max-width: 580px;
+	width: max-content;
 }
 
-.rmg-card--no-rail {
-	padding-left: 12px;
+/* When the card is inside a narrow <td>, break out with a positioned wrapper */
+.rmg-card-wrapper {
+	position: relative;
+	z-index: 100;
+	min-width: 380px;
+	width: max-content;
 }
 
 .rmg-card::before {
 	content: "";
 	position: absolute;
-	left: 0;
-	top: 0;
-	bottom: 0;
+	left: 0; top: 0; bottom: 0;
 	width: 4px;
 	background: #003660;
-	border-radius: 10px 0 0 10px;
 }
 
-.rmg-card:hover {
-	transform: translateY(-1px);
-	box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
-}
+.rmg-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04); }
 
 @keyframes rmg-pop {
 	0% { transform: translateY(2px); opacity: 0; }
 	100% { transform: translateY(0); opacity: 1; }
 }
 
-.rmg-card-main {
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-	flex: 1;
-	min-width: 0;
-	padding-right: 0px;
-}
-
-.rmg-card-header {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	flex-wrap: nowrap;
-	position: relative;
-	max-width: 100%;
-}
-
-.rmg-card-rating {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-}
-
-.rmg-card-actions {
-	position: absolute;
-	right: 0;
-	top: 0;
-	display: flex;
-	gap: 6px;
-	align-items: center;
-}
-
 .rmg-badge {
 	font-weight: 800;
-	padding: 3px 6px;
+	padding: 4px 8px;
 	border-radius: 8px;
-	min-width: 32px;
+	min-width: 40px;
 	text-align: center;
 	font-variant-numeric: tabular-nums;
 	letter-spacing: 0.2px;
-	font-size: 13px;
-}
-
-.rmg-subtle {
-	opacity: 0.85;
-	font-size: 11px;
 	white-space: nowrap;
+	flex-shrink: 0;
 }
+.rmg-badge { grid-area: badge; }
+.rmg-subtle { grid-area: sub; display: block; }
+.rmg-stars { grid-area: stars; flex-shrink: 0; }
+.rmg-meter { display: none; }
+.rmg-actions { grid-area: actions; display: flex; justify-content: flex-end; flex-shrink: 0; }
+
+.rmg-badge--good { background: #d8efe1; color: #1b5e20; white-space: nowrap; flex-shrink: 0; }
+.rmg-badge--ok { background: #fff4d6; color: #7a5800; white-space: nowrap; flex-shrink: 0; }
+.rmg-badge--bad { background: #f8d7da; color: #8a1c1c; white-space: nowrap; flex-shrink: 0; }
+
+.rmg-subtle { opacity: 0.85; font-size: 12px; white-space: nowrap; flex-shrink: 0; }
+.rmg-meta { opacity: 0.85; font-size: 12px; }
 
 .rmg-link {
 	font-weight: 600;
@@ -108,21 +82,17 @@
 }
 .rmg-link:hover { filter: brightness(0.98); }
 
-.rmg-badge--good { background: #d8efe1; color: #1b5e20; }
-.rmg-badge--ok { background: #fff4d6; color: #7a5800; }
-.rmg-badge--bad { background: #f8d7da; color: #8a1c1c; }
-
 /* Gaucho Stars */
 .rmg-stars {
 	display: inline-flex;
-	gap: 2px;
+	gap: 6px;
 	align-items: center;
 }
 
 .rmg-star-container {
 	position: relative;
-	width: 18px;
-	height: 18px;
+	width: 32px;
+	height: 32px;
 	display: inline-block;
 }
 
@@ -130,8 +100,8 @@
 	position: absolute;
 	top: 0;
 	left: 0;
-	width: 18px;
-	height: 18px;
+	width: 32px;
+	height: 32px;
 	object-fit: contain;
 	transition: filter 0.2s ease;
 }
@@ -149,6 +119,23 @@
 }
 
 
+/* Rating meter */
+.rmg-meter {
+	grid-column: 1 / -1;
+	height: 6px;
+	background: #edf2f7;
+	border-radius: 6px;
+	overflow: hidden;
+	margin-top: 2px;
+}
+.rmg-meter > span {
+	display: block;
+	height: 100%;
+	background: linear-gradient(90deg, #FDB515, #f7a900);
+	width: 0;
+	transition: width 240ms ease;
+}
+
 /* Theme accents by quality */
 .rmg-good::before { background: #c8e6c9; }
 .rmg-ok::before { background: #fff8e1; }
@@ -156,649 +143,198 @@
 
 /* Course information styling */
 .rmg-course-info {
-	margin-top: 0;
-	margin-left: -10px;
-	margin-right: -10px;
-	padding: 4px 10px;
+	grid-column: 1 / -1;
+	margin-top: 8px;
+	padding: 8px;
 	background: #f8f9fa;
-	border-radius: 0 0 10px 10px;
+	border-radius: 6px;
 	border: 1px solid rgba(0,0,0,0.08);
-	border-left: none;
-	border-right: none;
-	width: calc(100% + 20px);
-	box-sizing: border-box;
-}
-
-/* Header row: course name + professor inline */
-.rmg-course-info-header {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: baseline;
-	gap: 4px 12px;
-	margin-bottom: 2px;
-}
-
-.rmg-course-detail--inline {
-	display: inline;
-	margin-bottom: 0;
-}
-
-/* Two-column layout for grades + enrollment side by side */
-.rmg-course-columns {
-	display: flex;
-	gap: 12px;
-	align-items: flex-start;
-	width: 100%;
-}
-
-.rmg-course-col {
-	flex: 1;
-	min-width: 0;
-}
-
-.rmg-course-col--left {
-	flex: 0 0 45%;
-	max-width: 45%;
-}
-
-.rmg-course-col--right {
-	flex: 1;
-	min-width: 0;
-}
-
-.rmg-course-section {
-	margin-top: 1px;
-	display: flex;
-	flex-direction: column;
-	gap: 1px;
 }
 
 .rmg-course-name {
 	font-weight: 600;
 	color: #003660;
-	margin-bottom: 0;
-	font-size: 12px;
+	margin-bottom: 4px;
+	font-size: 14px;
 }
 
 .rmg-course-detail {
-	font-size: 11px;
+	font-size: 12px;
 	color: #666;
-	margin-bottom: 0;
-}
-
-.rmg-course-detail--title {
-	font-weight: 600;
-	color: #1f2937;
-	margin-bottom: 0;
-}
-
-.rmg-course-detail--muted {
-	color: #475569;
+	margin-bottom: 2px;
 }
 
 .rmg-course-reviews {
-	margin-top: 1px;
+	margin-top: 6px;
 }
 
 .rmg-course-reviews-title {
 	font-weight: 600;
-	font-size: 11px;
+	font-size: 12px;
 	color: #003660;
-	margin-bottom: 1px;
+	margin-bottom: 4px;
 }
 
 .rmg-course-review {
-	font-size: 10px;
+	font-size: 11px;
 	color: #555;
 	font-style: italic;
-	margin-bottom: 1px;
-	line-height: 1.15;
-	padding-left: 6px;
+	margin-bottom: 3px;
+	line-height: 1.3;
+	padding-left: 8px;
 	border-left: 2px solid #ddd;
-	max-width: 100%;
-	padding-right: 8px;
-	white-space: normal;
-	word-wrap: break-word;
 }
 
 .rmg-course-link {
 	margin-left: 4px;
 }
 
-.rmg-grade-chart {
-	display: flex;
-	flex-direction: column;
-	gap: 1px;
-}
-
-.rmg-grade-bar {
-	display: grid;
-	grid-template-columns: 22px 1fr 34px;
-	align-items: center;
-	gap: 4px;
-	font-size: 10px;
-	color: #1f2937;
-}
-
-.rmg-grade-bar-label {
-	font-weight: 600;
-	text-transform: uppercase;
-	color: #1f2937;
-	font-size: 9px;
-}
-
-.rmg-grade-bar-track {
-	position: relative;
-	height: 5px;
-	border-radius: 999px;
-	background: rgba(37, 99, 235, 0.15);
-	overflow: hidden;
-}
-
-.rmg-grade-bar-fill {
-	position: absolute;
-	left: 0;
-	top: 0;
-	bottom: 0;
-	border-radius: inherit;
-	background: linear-gradient(90deg, #2563eb, #1e3a8a);
-	width: var(--rmg-grade-fill, 0%);
-}
-
-.rmg-grade-bar-value {
-	text-align: left;
-	font-variant-numeric: tabular-nums;
-	color: #334155;
-	padding-left: 0;
-	font-size: 9px;
-}
-
-.rmg-enrollment-graph {
-	position: relative;
-	margin: 1px 0;
-	background: #ffffff;
-	border-radius: 6px;
-	padding: 2px;
-	border: 1px solid rgba(0,0,0,0.08);
-}
-
-.rmg-enrollment-canvas {
-	display: block;
-	width: 100%;
-	height: 80px;
-}
-
-.rmg-enrollment-tooltip {
-	position: absolute;
-	background: rgba(15, 23, 42, 0.95);
-	color: #ffffff;
-	padding: 8px 12px;
-	border-radius: 6px;
-	font-size: 11px;
-	line-height: 1.4;
-	pointer-events: none;
-	z-index: 1000;
-	white-space: nowrap;
-	box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-}
-
-.rmg-enrollment-tooltip strong {
-	font-weight: 600;
-	display: inline-block;
-	margin-bottom: 2px;
-}
-
-/* Persona top bar (replaces rail) */
-
-.rmg-card-top-bar {
+/* ── Responsive course columns (grades vs enrollment side-by-side, stacks if narrow) ── */
+.rmg-course-columns {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 4px;
-	align-items: center;
-	padding: 2px 6px;
-	background: #f1f5f9;
-	border-radius: 6px;
-	border: 1px solid rgba(15,23,42,0.08);
-	margin-bottom: 1px;
+	gap: 8px 16px;
+	align-items: flex-start;
 }
 
-.rmg-top-bar-chips {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 4px;
+.rmg-course-columns > div {
+	flex: 1 1 140px;
+	min-width: 120px;
 }
 
-.rmg-top-bar-chip {
-	font-size: 10px;
-	font-weight: 600;
-	padding: 2px 5px;
-	border-radius: 999px;
-	background: rgba(30,64,175,0.12);
-	color: #1e3a8a;
-}
-.rmg-top-bar-chip--positive { background: #dcfce7; color: #166534; }
-.rmg-top-bar-chip--neutral { background: #e2e8f0; color: #334155; }
-.rmg-top-bar-chip--caution { background: #fef3c7; color: #92400e; }
-
-.rmg-top-bar-vibe {
-	font-size: 10px;
-	font-style: italic;
-	color: #374151;
-	line-height: 1.35;
-	max-width: 250px;
-}
-
-.rmg-top-bar-effort {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-}
-
-.rmg-top-bar-effort-label {
-	font-size: 10px;
-	font-weight: 600;
-	color: #1f2937;
-	white-space: nowrap;
-}
-
-.rmg-top-bar-effort-bar {
-	position: relative;
-	width: 60px;
-	height: 6px;
-	border-radius: 999px;
-	background: #e2e8f0;
-	overflow: hidden;
-}
-
-.rmg-top-bar-effort-bar span {
-	position: absolute;
-	left: 0;
-	top: 0;
-	bottom: 0;
-	width: var(--effort-fill, 0%);
-	background: linear-gradient(90deg, #f59e0b 0%, #d97706 100%);
-	transition: width 240ms ease;
-}
-
-.rmg-top-bar-dials {
-	display: flex;
-	gap: 4px;
-	align-items: center;
-}
-
-.rmg-top-bar-dial {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 2px;
-	text-align: center;
-}
-
-.rmg-top-bar-dial-ring {
-	position: relative;
-	width: 28px;
-	height: 28px;
-	border-radius: 50%;
-	background: conic-gradient(#2563eb var(--dial-progress, 0%), #e2e8f0 0);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-}
-
-.rmg-top-bar-dial-ring::after {
-	content: "";
-	position: absolute;
-	inset: 4px;
-	background: #ffffff;
-	border-radius: 50%;
-	box-shadow: inset 0 1px 2px rgba(0,0,0,0.08);
-	z-index: 0;
-}
-
-.rmg-top-bar-dial-emblem {
-	position: relative;
-	z-index: 1;
-	font-size: 9px;
-	font-weight: 700;
-	color: #1f2937;
-	text-align: center;
-	max-width: 30px;
-	line-height: 1.1;
-}
-
-.rmg-top-bar-dial-label {
-	font-size: 8px;
-	font-weight: 600;
-	color: #64748b;
-	text-transform: uppercase;
-	letter-spacing: 0.4px;
-}
-
-.rmg-top-bar-signals {
-	display: flex;
-	gap: 4px;
-	flex-wrap: wrap;
-}
-
-.rmg-top-bar-signal {
-	display: flex;
-	align-items: center;
-	gap: 5px;
-	padding: 2px 5px;
-	border-radius: 6px;
-	background: rgba(148, 163, 184, 0.18);
-	color: #1f2937;
-	font-size: 10px;
-	font-weight: 600;
-}
-
-.rmg-top-bar-signal--positive { background: rgba(187, 247, 208, 0.7); color: #166534; }
-.rmg-top-bar-signal--caution { background: rgba(254, 215, 170, 0.7); color: #92400e; }
-
-.rmg-top-bar-signal-icon {
-	font-size: 11px;
-	line-height: 1;
-}
-
-.rmg-top-bar-signal-label {
-	white-space: nowrap;
-}
-
-@media (max-width: 720px) {
-	.rmg-card {
-		flex-direction: column;
-		gap: 6px;
-		min-width: auto;
-		width: 100%;
-		max-width: 100%;
-		padding: 8px;
-		margin: 4px 0 0;
-	}
-	.rmg-card::before {
-		display: none;
-	}
-	.rmg-card-top-bar {
-		flex-direction: column;
-		align-items: flex-start;
-	}
-	.rmg-card-main {
-		width: 100%;
-	}
-	.rmg-subtle {
-		white-space: normal;
-	}
-	.rmg-course-columns {
-		flex-direction: column;
-		gap: 4px;
-	}
-	.rmg-course-col--left {
-		flex: 1;
-		max-width: 100%;
-	}
-}
-
-/* Feature 1: Waitlist Odds Styles */
-.rmg-waitlist-odds {
-	display: flex;
-	align-items: center;
-	gap: 4px;
-	margin-top: 1px;
-	padding: 0;
-}
-
-.rmg-waitlist-odds-label {
-	font-size: 10px;
-	font-weight: 600;
-	color: #003660;
-}
-
-.rmg-waitlist-odds-badge {
-	display: inline-block;
-	padding: 2px 8px;
-	border-radius: 12px;
-	font-size: 10px;
-	font-weight: 700;
-	letter-spacing: 0.3px;
-	transition: transform 0.2s ease;
-	cursor: help;
-}
-
-.rmg-waitlist-odds-badge:hover {
-	transform: scale(1.05);
-}
-
-.rmg-waitlist-odds-badge--high {
-	background: #d8efe1;
-	color: #1b5e20;
-	border: 1px solid #a5d6a7;
-}
-
-.rmg-waitlist-odds-badge--medium {
-	background: #fff4d6;
-	color: #7a5800;
-	border: 1px solid #ffeb3b;
-}
-
-.rmg-waitlist-odds-badge--low {
-	background: #ffe0b2;
-	color: #e65100;
-	border: 1px solid #ffb74d;
-}
-
-.rmg-waitlist-odds-badge--very-low {
-	background: #f8d7da;
-	color: #8a1c1c;
-	border: 1px solid #f5c6cb;
-}
-
-/* Feature 2: Grade Inflation Index Styles */
+/* Grade-inflation chip */
 .rmg-grade-inflation {
 	display: inline-block;
 	padding: 2px 6px;
-	border-radius: 8px;
-	font-size: 9px;
-	font-weight: 700;
-	letter-spacing: 0.2px;
-	margin-left: 4px;
-	cursor: help;
-	transition: transform 0.2s ease;
-}
-
-.rmg-grade-inflation:hover {
-	transform: scale(1.05);
-}
-
-.rmg-grade-inflation--easier {
-	background: #d8efe1;
-	color: #1b5e20;
-	border: 1px solid #a5d6a7;
-}
-
-.rmg-grade-inflation--harder {
-	background: #f8d7da;
-	color: #8a1c1c;
-	border: 1px solid #f5c6cb;
-}
-
-.rmg-grade-inflation--neutral {
-	background: #e3f2fd;
-	color: #01579b;
-	border: 1px solid #90caf9;
-}
-
-/* Feature 3: Prerequisite Tree Styles */
-/* Prerequisite chain display - now shown as a visible section */
-.rmg-prereq-chain {
-	color: #475569;
-	line-height: 1.2;
-	font-family: 'Courier New', monospace;
-	font-size: 10px;
-	white-space: pre-wrap;
-	padding: 1px 0;
-}
-
-.rmg-prereq-node {
-	display: block;
-	margin: 2px 0;
-}
-
-.rmg-prereq-arrow {
-	color: #003660;
-	font-weight: bold;
-}
-
-/* Feature 4: Smart Conflict Detection Styles */
-.rmg-conflict {
-	background-color: rgba(255, 99, 71, 0.08) !important;
-	opacity: 0.85;
-}
-
-.rmg-conflict-badge {
-	display: inline-block;
-	padding: 4px 8px;
-	margin: 4px;
-	background: #f8d7da;
-	color: #8a1c1c;
-	border: 1px solid #f5c6cb;
 	border-radius: 4px;
 	font-size: 11px;
 	font-weight: 600;
 	white-space: nowrap;
+	flex-shrink: 0;
 }
 
-.rmg-conflict-badge::before {
-	content: '⚠️ ';
+.rmg-grade-inflation--easier { background: #d8efe1; color: #1b5e20; }
+.rmg-grade-inflation--harder { background: #f8d7da; color: #8a1c1c; }
+.rmg-grade-inflation--near   { background: #fff4d6; color: #7a5800; }
+
+/* ── Scroll-target flash highlight ── */
+@keyframes rmg-flash {
+	0%   { background-color: rgba(253, 181, 21, 0.45); }
+	100% { background-color: transparent; }
 }
 
-/* Feature 5: Download Schedule ICS Export Styles */
-.rmg-ics-download-btn {
-	position: fixed;
-	bottom: 24px;
-	right: 24px;
-	z-index: 9999;
-	padding: 12px 20px;
-	background: linear-gradient(135deg, #003660 0%, #005a9e 100%);
-	color: #ffffff;
-	border: 2px solid #002040;
-	border-radius: 10px;
-	font-size: 14px;
-	font-weight: 700;
-	cursor: pointer;
-	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2), 0 2px 4px rgba(0, 0, 0, 0.1);
-	transition: all 0.3s ease;
-	letter-spacing: 0.3px;
+.rmg-flash-highlight {
+	animation: rmg-flash 1.6s ease-out forwards;
+	outline: 2px solid #FDB515;
+	outline-offset: 2px;
+	border-radius: 4px;
 }
 
-.rmg-ics-download-btn:hover {
-	transform: translateY(-2px);
-	box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25), 0 3px 6px rgba(0, 0, 0, 0.15);
-	background: linear-gradient(135deg, #004d7a 0%, #006bb8 100%);
-}
-
-.rmg-ics-download-btn:active {
-	transform: translateY(0);
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-}
-
-/* Feature 6: Natural Language Filter Styles */
+/* ── NLP Semantic Search Bar ── */
 .rmg-nlp-search {
 	position: fixed;
-	top: 80px;
+	top: 0;
 	left: 50%;
 	transform: translateX(-50%);
-	z-index: 9998;
-	width: 90%;
-	max-width: 600px;
+	z-index: 999999;
+	width: 560px;
+	max-width: 92vw;
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .rmg-nlp-input {
 	width: 100%;
-	padding: 14px 20px;
-	font-size: 15px;
-	border: 2px solid #003660;
-	border-radius: 12px;
-	background: rgba(255, 255, 255, 0.95);
-	backdrop-filter: blur(10px);
-	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-	transition: all 0.3s ease;
 	box-sizing: border-box;
+	padding: 10px 14px;
+	font-size: 14px;
+	border: 2px solid #003660;
+	border-radius: 0 0 10px 10px;
+	background: rgba(255, 255, 255, 0.92);
+	backdrop-filter: blur(10px);
+	-webkit-backdrop-filter: blur(10px);
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+	outline: none;
+	transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .rmg-nlp-input:focus {
-	outline: none;
-	border-color: #005a9e;
-	box-shadow: 0 6px 20px rgba(0, 54, 96, 0.25);
-	background: rgba(255, 255, 255, 1);
+	border-color: #FDB515;
+	box-shadow: 0 4px 20px rgba(253, 181, 21, 0.25);
 }
 
 .rmg-nlp-input::placeholder {
-	color: #666;
+	color: #888;
 	font-style: italic;
 }
 
 .rmg-nlp-results {
-	position: absolute;
-	top: 100%;
-	left: 0;
-	right: 0;
-	margin-top: 8px;
-	max-height: 400px;
+	max-height: 360px;
 	overflow-y: auto;
-	background: rgba(255, 255, 255, 0.98);
-	backdrop-filter: blur(10px);
-	border: 2px solid #003660;
-	border-radius: 12px;
-	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+	background: #fff;
+	border: 1px solid rgba(0, 0, 0, 0.12);
+	border-top: none;
+	border-radius: 0 0 8px 8px;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 
 .rmg-nlp-result-item {
-	padding: 12px 16px;
-	border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 14px;
 	cursor: pointer;
-	transition: background-color 0.2s ease;
+	border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+	transition: background 0.12s;
 }
 
 .rmg-nlp-result-item:hover {
-	background-color: rgba(0, 54, 96, 0.08);
+	background: #f0f4f8;
 }
 
 .rmg-nlp-result-item:last-child {
 	border-bottom: none;
 }
 
-.rmg-nlp-no-results {
-	color: #666;
-	font-style: italic;
-	text-align: center;
-	cursor: default;
-}
-
-.rmg-nlp-no-results:hover {
-	background-color: transparent;
-}
-
 .rmg-nlp-result-code {
 	font-weight: 700;
 	color: #003660;
 	font-size: 14px;
-	margin-bottom: 4px;
+	white-space: nowrap;
+	flex-shrink: 0;
 }
 
 .rmg-nlp-result-prof {
 	font-size: 12px;
 	color: #555;
-	margin-bottom: 2px;
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .rmg-nlp-result-gpa {
-	font-size: 12px;
-	color: #666;
 	font-weight: 600;
+	font-size: 13px;
+	white-space: nowrap;
+	flex-shrink: 0;
 }
 
 .rmg-nlp-result-inflation {
-	font-size: 11px;
-	font-weight: 500;
-	color: #005a9e;
+	display: inline-block;
+	padding: 2px 6px;
+	border-radius: 4px;
+	font-size: 10px;
+	font-weight: 600;
+	white-space: nowrap;
+	flex-shrink: 0;
+}
+
+.rmg-nlp-no-results {
+	padding: 14px;
+	text-align: center;
+	color: #888;
+	font-size: 13px;
+	font-style: italic;
 }
 
