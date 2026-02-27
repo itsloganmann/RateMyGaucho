@@ -2501,14 +2501,16 @@ function observeAndRender() {
 				&& courseData.recentReviews.length > 0
 			);
 			
-			// If reviews can't be verified for this instructor, strip reviews but still show grades/enrollment/etc.
-			let gatedCourseData = courseData;
-			if (!(hasInstructorSpecificReviews || verifiedByCsvProfessor || verifiedByFlag)) {
-				console.log('[RateMyGaucho] Review gating not met for',
+			const gatedCourseData = (courseData && (hasInstructorSpecificReviews || verifiedByCsvProfessor || verifiedByFlag))
+				? courseData
+				: null;
+			
+			if (!gatedCourseData) {
+				console.log('[RateMyGaucho] SKIPPED course data for',
 					`${match.firstName} ${match.lastName}`,
-					'- showing card without reviews',
+					'- gating conditions not met',
 					{ hasInstructorSpecificReviews, verifiedByCsvProfessor, reviewVerification: courseData?.reviewVerification });
-				gatedCourseData = Object.assign({}, courseData, { recentReviews: [] });
+				continue;
 			}
 			
 			courseFoundCount++;
@@ -2916,16 +2918,6 @@ function createEnrollmentLineGraph(enrollmentData) {
 	return container;
 }
 
-// One-time document listener to dismiss open card popups when clicking outside
-(function() {
-	if (window.__rmgPopupDismissInstalled) return;
-	window.__rmgPopupDismissInstalled = true;
-	document.addEventListener('click', (e) => {
-		if (e.target && e.target.closest && e.target.closest('.rmg-inline-wrapper')) return;
-		document.querySelectorAll('.rmg-card-popup--visible').forEach(p => p.classList.remove('rmg-card-popup--visible'));
-	}, { capture: true, passive: true });
-})();
-
 function renderCard(anchorNode, record, courseData = null, departmentAverages = null, prerequisiteMap = null) {
 	const card = document.createElement('div');
 	const rating = Number(record.rmpScore || 0);
@@ -3244,48 +3236,23 @@ function renderCard(anchorNode, record, courseData = null, departmentAverages = 
 		main.appendChild(courseInfo);
 	}
 
-	// Create inline trigger badge that shows the card popup on hover/click
-	const trigger = document.createElement('span');
-	trigger.className = 'rmg-inline-trigger';
-	const triggerRating = rating.toFixed(1);
-	trigger.textContent = triggerRating;
-	trigger.classList.add(
-		rating >= 4 ? 'rmg-badge--good' : rating >= 3 ? 'rmg-badge--ok' : 'rmg-badge--bad'
-	);
-
-	// Wrap the card in a popup container positioned relative to the trigger
-	const popup = document.createElement('div');
-	popup.className = 'rmg-card-popup';
-	popup.appendChild(card);
-
-	let hideTimeout = null;
-
-	const showPopup = () => {
-		if (hideTimeout) { clearTimeout(hideTimeout); hideTimeout = null; }
-		popup.classList.add('rmg-card-popup--visible');
-	};
-	const hidePopup = () => {
-		hideTimeout = setTimeout(() => { popup.classList.remove('rmg-card-popup--visible'); }, 200);
-	};
-
-	trigger.addEventListener('mouseenter', showPopup);
-	trigger.addEventListener('mouseleave', hidePopup);
-	popup.addEventListener('mouseenter', showPopup);
-	popup.addEventListener('mouseleave', hidePopup);
-	trigger.addEventListener('click', (e) => {
-		e.stopPropagation();
-		popup.classList.toggle('rmg-card-popup--visible');
-	});
-
 	try {
-		const wrapper = document.createElement('span');
-		wrapper.className = 'rmg-inline-wrapper';
-		wrapper.appendChild(trigger);
-		wrapper.appendChild(popup);
-		anchorNode.insertAdjacentElement('afterend', wrapper);
+		const cell = anchorNode.closest && anchorNode.closest('td,th');
+		if (cell) {
+			cell.style.minWidth = '960px';
+			cell.style.width = 'auto';
+			cell.style.maxWidth = 'none';
+			cell.style.paddingRight = '12px';
+			cell.style.paddingLeft = '12px';
+			cell.style.textAlign = 'left';
+			cell.style.verticalAlign = 'top';
+			cell.style.display = 'block';
+			cell.appendChild(card);
+		} else {
+			anchorNode.insertAdjacentElement('afterend', card);
+		}
 	} catch (_e) {
-		(anchorNode.parentElement || document.body).appendChild(trigger);
-		(anchorNode.parentElement || document.body).appendChild(popup);
+		(anchorNode.parentElement || document.body).appendChild(card);
 	}
 
 }
