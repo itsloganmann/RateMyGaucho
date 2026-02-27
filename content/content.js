@@ -1349,8 +1349,10 @@ function parseNaturalQuery(queryText) {
 	else if (/\b(moderate|medium|average)\b/.test(query)) result.difficulty = 'moderate';
 
 	// Exact course code (e.g., CMPSC 130A, MATH 2A)
+	// Reject common English words that look like dept codes (AFTER, BEFORE, UPPER, etc.)
+	const nonDeptWords = new Set(['AFTER', 'BEFORE', 'UPPER', 'LOWER', 'ABOUT', 'ABOVE', 'BELOW', 'BETWEEN', 'CLASS', 'EASY', 'HARD', 'WITH', 'FROM', 'INTO', 'OVER', 'UNDER', 'NEAR', 'LIKE', 'JUST', 'ALSO', 'SOME', 'MOST', 'THAT', 'THIS', 'THAN', 'THEN', 'VERY', 'MUCH', 'MORE', 'LESS', 'ONLY']);
 	const courseCodeMatch = queryText.match(/\b([A-Z]{2,8})\s+(\d+[A-Z]*)\b/i);
-	if (courseCodeMatch) {
+	if (courseCodeMatch && !nonDeptWords.has(courseCodeMatch[1].toUpperCase())) {
 		result.exactCourseCode = `${courseCodeMatch[1].toUpperCase()} ${courseCodeMatch[2].toUpperCase()}`;
 	}
 
@@ -1385,6 +1387,18 @@ function parseNaturalQuery(queryText) {
 		let h = parseInt(beforeMatch[1], 10);
 		if (beforeMatch[2] && beforeMatch[2].toLowerCase() === 'pm' && h < 12) h += 12;
 		result.timeRange.end = h;
+	}
+
+	// Also match standalone time patterns like "2pm", "10am", "3:30pm"
+	const standaloneTime = query.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+	if (standaloneTime && result.timeRange.start === null && result.timeRange.end === null) {
+		let h = parseInt(standaloneTime[1], 10);
+		if (standaloneTime[3].toLowerCase() === 'pm' && h < 12) h += 12;
+		if (standaloneTime[3].toLowerCase() === 'am' && h === 12) h = 0;
+		// If query has "after", treat as start; if "before", treat as end; otherwise treat as approximate
+		if (/after/i.test(query)) result.timeRange.start = h;
+		else if (/before/i.test(query)) result.timeRange.end = h;
+		else { result.timeRange.start = h > 0 ? h - 1 : 0; result.timeRange.end = h + 2; }
 	}
 
 	// Known department codes at UCSB (used to validate uppercase matches)
@@ -1469,6 +1483,56 @@ function parseNaturalQuery(queryText) {
 	return result;
 }
 
+/**
+ * Build a schedule index from the current GOLD page DOM.
+ * Scans visible table rows for course codes, day patterns (M, T, W, R, F, TR, MWF, etc.)
+ * and start times. Returns Map<normalizedCourseCode, [{days, startHour}]>.
+ */
+function buildPageScheduleIndex() {
+	const index = new Map();
+	const courseCodeRe = /\b([A-Z]{2,8})\s+(\d{1,3}[A-Z]*)\b/;
+	const dayRe = /\b([MTWRF]{1,5})\b/;
+	const timeRe = /(\d{1,2}):(\d{2})\s*(AM|PM)/i;
+
+	let currentCourse = null;
+	for (const row of document.querySelectorAll('tr')) {
+		const text = (row.textContent || '').replace(/\s+/g, ' ').trim();
+		// Detect course header rows
+		const cm = text.match(courseCodeRe);
+		if (cm) {
+			currentCourse = normalizeCourseCode(`${cm[1]} ${cm[2]}`);
+		}
+		if (!currentCourse) continue;
+
+		// Look for day and time in this row's cells
+		const cells = row.querySelectorAll('td, th');
+		let days = null;
+		let startHour = null;
+		for (const cell of cells) {
+			const ct = (cell.textContent || '').trim();
+			if (!days) {
+				const dm = ct.match(dayRe);
+				if (dm && /^[MTWRF]+$/.test(dm[1])) days = dm[1];
+			}
+			if (startHour === null) {
+				const tm = ct.match(timeRe);
+				if (tm) {
+					let h = parseInt(tm[1], 10);
+					const period = tm[3].toUpperCase();
+					if (period === 'PM' && h < 12) h += 12;
+					if (period === 'AM' && h === 12) h = 0;
+					startHour = h;
+				}
+			}
+		}
+		if (days || startHour !== null) {
+			if (!index.has(currentCourse)) index.set(currentCourse, []);
+			index.get(currentCourse).push({ days, startHour });
+		}
+	}
+	return index;
+}
+
 function filterCoursesNLP(query, courseLookup, deptAverages) {
 	if (!courseLookup) return [];
 	const parsed = parseNaturalQuery(query);
@@ -1481,11 +1545,17 @@ function filterCoursesNLP(query, courseLookup, deptAverages) {
 	const hasExactCourse = !!parsed.exactCourseCode;
 	const hasDifficulty = !!parsed.difficulty;
 	const hasLevel = !!parsed.level;
-	const hasStructuredFilter = hasDeptFilter || hasExactCourse || hasDifficulty || hasLevel;
+	const hasDays = parsed.days.length > 0;
+	const hasTime = parsed.timeRange.start !== null || parsed.timeRange.end !== null;
+	const hasStructuredFilter = hasDeptFilter || hasExactCourse || hasDifficulty || hasLevel || hasDays || hasTime;
 	
 	// If no structured filter matched, try keyword/substring matching against course names,
 	// professor names, and department names
 	const doKeywordSearch = !hasStructuredFilter && queryWords.length > 0;
+
+	// Pre-build a DOM day/time index for the current page so we can score schedule matches.
+	// Maps normalized course code → [{ days: string, startHour: number }]
+	const pageSections = (hasDays || hasTime) ? buildPageScheduleIndex() : null;
 
 	for (const [courseName, records] of courseLookup.entries()) {
 		for (const rec of records) {
@@ -1552,6 +1622,32 @@ function filterCoursesNLP(query, courseLookup, deptAverages) {
 				if (parsed.level === 'upper' && courseNum >= 100) score += 3;
 				else if (parsed.level === 'lower' && courseNum < 100) score += 3;
 				else if (courseNum > 0) score -= 1;
+			}
+
+			// Day/time — low-weight tiebreaker (weight: 2 each)
+			// Checks the visible GOLD page for schedule rows matching this course
+			if (pageSections && (hasDays || hasTime)) {
+				const normCode = normalizeCourseCode(rec.courseName);
+				const sections = pageSections.get(normCode);
+				if (sections && sections.length > 0) {
+					let dayMatch = false;
+					let timeMatch = false;
+					for (const sec of sections) {
+						if (hasDays && sec.days) {
+							const sectionDays = sec.days.toUpperCase();
+							if (parsed.days.every(d => sectionDays.includes(d))) dayMatch = true;
+						}
+						if (hasTime && sec.startHour !== null) {
+							const afterOk = parsed.timeRange.start === null || sec.startHour >= parsed.timeRange.start;
+							const beforeOk = parsed.timeRange.end === null || sec.startHour < parsed.timeRange.end;
+							if (afterOk && beforeOk) timeMatch = true;
+						}
+					}
+					if (hasDays) score += dayMatch ? 2 : -1;
+					if (hasTime) score += timeMatch ? 2 : -1;
+				}
+				// If no sections found on the page for this course, don't penalise —
+				// the course may still be relevant even if not on the current page.
 			}
 
 			if (score > 0) {
