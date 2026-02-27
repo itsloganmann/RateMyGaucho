@@ -907,16 +907,26 @@ function matchInstructor(info, lookup) {
 
 function renderCard(anchorNode, record, courseData = null) {
 	const card = document.createElement('div');
-	const hasRatings = record && Number.isFinite(Number(record.rmpScore));
-	const rating = hasRatings ? Number(record.rmpScore) : 0;
-	card.className = 'rmg-card ' + (hasRatings ? (rating >= 4 ? 'rmg-good' : rating >= 3 ? 'rmg-ok' : 'rmg-bad') : 'rmg-ok');
+	const hasRmpRatings = record && Number.isFinite(Number(record.rmpScore));
+	const hasGpa = courseData && Number.isFinite(courseData.avgGpa) && courseData.avgGpa > 0;
+	// Use RMP score if available, otherwise derive a 5-star rating from GPA (4.0 scale → 5.0 scale)
+	const hasAnyRating = hasRmpRatings || hasGpa;
+	const rating = hasRmpRatings ? Number(record.rmpScore)
+		: hasGpa ? Math.min(5, (courseData.avgGpa / 4.0) * 5) : 0;
+	card.className = 'rmg-card ' + (hasAnyRating ? (rating >= 4 ? 'rmg-good' : rating >= 3 ? 'rmg-ok' : 'rmg-bad') : 'rmg-ok');
 
 	const badge = document.createElement('span');
 	badge.className = 'rmg-badge';
-	if (hasRatings) {
+	if (hasRmpRatings) {
 		badge.textContent = rating.toFixed(1);
 		badge.classList.add(
 			rating >= 4 ? 'rmg-badge--good' : rating >= 3 ? 'rmg-badge--ok' : 'rmg-badge--bad'
+		);
+	} else if (hasGpa) {
+		badge.textContent = courseData.avgGpa.toFixed(1);
+		badge.title = 'Avg GPA';
+		badge.classList.add(
+			courseData.avgGpa >= 3.5 ? 'rmg-badge--good' : courseData.avgGpa >= 2.5 ? 'rmg-badge--ok' : 'rmg-badge--bad'
 		);
 	} else {
 		badge.textContent = '—';
@@ -925,7 +935,8 @@ function renderCard(anchorNode, record, courseData = null) {
 
 	const sub = document.createElement('span');
 	sub.className = 'rmg-subtle';
-	sub.textContent = hasRatings ? `${record.numReviews} reviews` : (courseData ? courseData.courseName : '');
+	sub.textContent = hasRmpRatings ? `${record.numReviews} reviews`
+		: (courseData ? courseData.courseName : '');
 
 	const stars = document.createElement('div');
 	stars.className = 'rmg-stars';
@@ -1009,7 +1020,7 @@ function renderCard(anchorNode, record, courseData = null) {
 			const colCount = row.querySelectorAll('td, th').length || 1;
 			const newCell = document.createElement('td');
 			newCell.colSpan = colCount;
-			newCell.style.cssText = 'padding: 0 4px 4px 4px; border: none; background: transparent;';
+			newCell.style.cssText = 'padding: 2px 4px 4px 4px; border: none; background: transparent; text-align: left;';
 			newCell.appendChild(wrapper);
 			newRow.appendChild(newCell);
 			row.insertAdjacentElement('afterend', newRow);
@@ -1028,7 +1039,7 @@ function renderCard(anchorNode, record, courseData = null) {
 	}
 
 	requestAnimationFrame(() => {
-		const pct = Math.max(0, Math.min(100, (rating / 5) * 100));
+		const pct = hasAnyRating ? Math.max(0, Math.min(100, (rating / 5) * 100)) : 0;
 		bar.style.width = pct + '%';
 	});
 }
@@ -1095,7 +1106,7 @@ function renderCourseMeta(courseRec) {
 				if (typeof val === 'number' && !isNaN(val)) {
 					const sparkBar = document.createElement('span');
 					sparkBar.className = 'rmg-spark-bar';
-					sparkBar.style.height = `${Math.max(3, (val / maxVal) * 24)}px`;
+					sparkBar.style.height = `${Math.max(2, (val / maxVal) * 18)}px`;
 					sparkBar.title = `Quarter ${i + 1}: ${val} students`;
 					enrollSpark.appendChild(sparkBar);
 				}
@@ -1161,8 +1172,8 @@ function renderCourseMeta(courseRec) {
 			const reviewText = document.createElement('div');
 			reviewText.className = 'rmg-review-text';
 			const cleanReview = firstReview.replace(/[="]/g, '').trim();
-			const truncatedReview = cleanReview.length > 140
-				? cleanReview.slice(0, 140) + '…' : cleanReview;
+			const truncatedReview = cleanReview.length > 100
+				? cleanReview.slice(0, 100) + '…' : cleanReview;
 			reviewText.textContent = `"${truncatedReview}"`;
 			reviewSection.appendChild(reviewText);
 
