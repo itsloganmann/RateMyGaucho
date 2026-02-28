@@ -1014,15 +1014,28 @@ function renderCard(anchorNode, record, courseData = null) {
 	try {
 		const row = anchorNode.closest && anchorNode.closest('tr');
 		if (row && row.parentElement) {
-			// Insert as a new row below the instructor row so it doesn't overlap adjacent cells
+			// Insert as a new row below the instructor row
+			// Use only half the columns so the card stays on the left and
+			// never overlaps the action buttons (Course Info, Add, etc.) on the right
 			const newRow = document.createElement('tr');
 			newRow.className = 'rmg-card-row';
-			const colCount = row.querySelectorAll('td, th').length || 1;
+			const allCells = row.querySelectorAll('td, th');
+			const colCount = allCells.length || 1;
+			// Card cell spans roughly the left half of the table
+			const cardSpan = Math.max(1, Math.ceil(colCount / 2));
 			const newCell = document.createElement('td');
-			newCell.colSpan = colCount;
+			newCell.colSpan = cardSpan;
 			newCell.style.cssText = 'padding: 2px 4px 4px 4px; border: none; background: transparent; text-align: left;';
 			newCell.appendChild(wrapper);
 			newRow.appendChild(newCell);
+			// Fill remaining columns with an empty cell so the table layout stays intact
+			const remainingCols = colCount - cardSpan;
+			if (remainingCols > 0) {
+				const emptyCell = document.createElement('td');
+				emptyCell.colSpan = remainingCols;
+				emptyCell.style.cssText = 'border: none; background: transparent; padding: 0;';
+				newRow.appendChild(emptyCell);
+			}
 			row.insertAdjacentElement('afterend', newRow);
 		} else {
 			const cell = anchorNode.closest && anchorNode.closest('td,th');
