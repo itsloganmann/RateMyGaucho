@@ -1014,29 +1014,49 @@ function renderCard(anchorNode, record, courseData = null) {
 	try {
 		const row = anchorNode.closest && anchorNode.closest('tr');
 		if (row && row.parentElement) {
-			// Insert as a new row below the instructor row
-			// Use only half the columns so the card stays on the left and
-			// never overlaps the action buttons (Course Info, Add, etc.) on the right
+			// Find the course header row (the dark-blue row with the course name
+			// like "ECE 10C - FOUNDTN CIRC & SYS") above this instructor row.
+			// Insert the card after that header row so it sits at the far left,
+			// below the course title and above all section rows with buttons.
+			let headerRow = null;
+			let prev = row.previousElementSibling;
+			for (let i = 0; prev && i < 15; i++) {
+				const txt = (prev.textContent || '').trim();
+				// Header rows typically have a <td colspan> with <strong> and a course code
+				const hasStrong = prev.querySelector('strong, b, th');
+				const hasCourseCode = /\b[A-Z]{2,8}\s+\d{1,3}[A-Z]*\b/.test(txt);
+				if (hasStrong && hasCourseCode) {
+					headerRow = prev;
+					break;
+				}
+				// Also detect header rows by colspan (header rows span many columns)
+				const firstTd = prev.querySelector('td[colspan], th[colspan]');
+				if (firstTd && hasCourseCode) {
+					headerRow = prev;
+					break;
+				}
+				prev = prev.previousElementSibling;
+			}
+
 			const newRow = document.createElement('tr');
 			newRow.className = 'rmg-card-row';
 			const allCells = row.querySelectorAll('td, th');
 			const colCount = allCells.length || 1;
-			// Card cell spans roughly the left half of the table
-			const cardSpan = Math.max(1, Math.ceil(colCount / 2));
 			const newCell = document.createElement('td');
-			newCell.colSpan = cardSpan;
+			newCell.colSpan = colCount;
 			newCell.style.cssText = 'padding: 2px 4px 4px 4px; border: none; background: transparent; text-align: left;';
 			newCell.appendChild(wrapper);
 			newRow.appendChild(newCell);
-			// Fill remaining columns with an empty cell so the table layout stays intact
-			const remainingCols = colCount - cardSpan;
-			if (remainingCols > 0) {
-				const emptyCell = document.createElement('td');
-				emptyCell.colSpan = remainingCols;
-				emptyCell.style.cssText = 'border: none; background: transparent; padding: 0;';
-				newRow.appendChild(emptyCell);
+
+			// Insert after the header row if found, otherwise after the instructor row
+			const insertAfter = headerRow || row;
+			// Make sure we don't double-insert: check if next sibling is already a card row
+			const nextSib = insertAfter.nextElementSibling;
+			if (nextSib && nextSib.classList.contains('rmg-card-row')) {
+				// Already have a card here, skip
+				return;
 			}
-			row.insertAdjacentElement('afterend', newRow);
+			insertAfter.insertAdjacentElement('afterend', newRow);
 		} else {
 			const cell = anchorNode.closest && anchorNode.closest('td,th');
 			if (cell) {
