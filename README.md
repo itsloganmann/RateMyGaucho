@@ -2,7 +2,7 @@
 
 RateMyGaucho enhances UCSB GOLD to 1,200+ students per month by showing professor ratings and course data directly on course result pages. It works offline and preserves your privacy by using a local dataset.
 
-**Demo Video**: https://www.youtube.com/watch?v=fl7-icSAves
+**Demo Video**: [https://www.youtube.com/watch?v=fl7-icSAves](https://www.youtube.com/watch?v=l6YT86jc_6U)
 
 ## Novel Features
 
